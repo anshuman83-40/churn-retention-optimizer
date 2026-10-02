@@ -14,7 +14,7 @@ targets offers by expected profit.
 
 > Free hosting: the first visit after a quiet period takes ~1 minute while the server wakes up.
 
-<!-- Add a screenshot of the dashboard: docs/dashboard.png -->
+![ChurnOpt dashboard](docs/dashboard.png)
 
 ## Dashboard
 
@@ -30,6 +30,8 @@ A custom web app (HTML/CSS/JS + Chart.js) served by the FastAPI backend, scoring
 - **Model Performance** and **How It Works** pages
 
 Every number on screen comes from the models. There are no invented names, dates or trends.
+
+<p align="center"><img src="docs/mobile.png" alt="ChurnOpt on a phone" width="280"><br><sub>Responsive: customer cards, bottom-sheet insights and a sticky what-if result on phones.</sub></p>
 
 **Uplift segments** used across the app:
 

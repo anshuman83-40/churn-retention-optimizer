@@ -457,5 +457,6 @@ async function init() {
   window.addEventListener("hashchange", route);
   route();
   $("#loading").classList.add("hide");
+  setTimeout(() => $("#loading").remove(), 400); // drop the overlay once it has faded out
 }
 init();
