@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChurnOpt · Churn &amp; Retention Optimizer</title>
+  <meta name="description" content="Predict customer churn, explain why, and decide who is worth a retention offer with causal uplift modelling.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css?v=3">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%235b6eff'/><path d='M8 20l5-5 4 4 7-8' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round'/></svg>">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="loading" id="loading"><div><div class="spinner"></div>Scoring 7,043 customers…</div></div>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-logo"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></div>
+      <div><div class="brand-name">ChurnOpt</div><div class="brand-sub">Churn &amp; Retention Optimizer</div></div>
+    </div>
+    <nav class="nav" id="nav">
+      <a href="#dashboard" data-view="dashboard"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</a>
+      <a href="#customers" data-view="customers"><svg class="icon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1"/><path d="M16 4a4 4 0 0 1 0 8M22 21v-1a6 6 0 0 0-4-5.6"/></svg>Customers</a>
+      <a href="#whatif" data-view="whatif"><svg class="icon" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>What-If Simulator</a>
+      <a href="#actions" data-view="actions"><svg class="icon" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Retention Actions<span class="badge" id="campaignCount" hidden>0</span></a>
+      <a href="#model" data-view="model"><svg class="icon" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>Model Performance</a>
+      <a href="#about" data-view="about"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>How It Works</a>
+    </nav>
+    <div class="side-card">
+      <div class="label">Expected value of recommended offers</div>
+      <div class="value" id="sideValue">–</div>
+      <div class="note" id="sideNote"></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <button class="menu-btn" id="menuBtn" aria-label="Open menu"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <label class="search"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="globalSearch" placeholder="Search customer ID, segment or factor…"></label>
+      <div class="spacer"></div>
+      <span class="chip optional"><svg class="icon" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>IBM Telco dataset</span>
+      <span class="chip"><span class="dot"></span><span id="modelChip">Models live</span></span>
+    </div>
+
+    <!-- ============================================================ DASHBOARD / CUSTOMERS -->
+    <section class="view" id="view-dashboard">
+      <div class="hero">
+        <div>
+          <h1 id="heroTitle">Churn &amp; Retention Optimizer</h1>
+          <p id="heroSub">Predict, understand and take action to keep your customers.</p>
+        </div>
+        <div class="tagline only-dashboard"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>Reduce churn. Target the persuadable. Grow revenue.</div>
+      </div>
+
+      <div class="grid kpis only-dashboard">
+        <div class="card kpi"><div class="kpi-icon tone-blue"><svg class="icon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1"/><path d="M16 4a4 4 0 0 1 0 8M22 21v-1a6 6 0 0 0-4-5.6"/></svg></div>
+          <div><div class="label">Total Customers</div><div class="value" id="kTotal">–</div><div class="sub" id="kTotalSub"></div></div></div>
+        <div class="card kpi"><div class="kpi-icon tone-red"><svg class="icon" viewBox="0 0 24 24"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></div>
+          <div><div class="label">Predicted Churn Rate</div><div class="value" id="kChurn">–</div><div class="sub" id="kChurnSub"></div></div></div>
+        <div class="card kpi"><div class="kpi-icon tone-purple"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+          <div><div class="label">Revenue at Risk (12 mo)</div><div class="value" id="kRisk">–</div><div class="sub down" id="kRiskSub"></div></div></div>
+        <div class="card kpi"><div class="kpi-icon tone-teal"><svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <div><div class="label">Customers to Save</div><div class="value" id="kSave">–</div><div class="sub up" id="kSaveSub"></div></div></div>
+      </div>
+
+      <div class="grid charts only-dashboard">
+        <div class="card">
+          <div class="card-head"><h3>Churn by Tenure</h3>
+            <div class="legend"><span><i style="background:var(--red)"></i>Actual churn</span><span><i style="background:var(--blue)"></i>Predicted churn</span></div></div>
+          <div class="chart-box"><canvas id="tenureChart" aria-label="Churn rate by tenure, actual vs predicted"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Customer Segments</h3><span class="hint">click to filter</span></div>
+          <div class="donut-wrap">
+            <div class="donut"><canvas id="segChart" aria-label="Customer segments"></canvas>
+              <div class="donut-center"><b id="donutTotal">–</b><span>Customers</span></div></div>
+            <div class="seg-list" id="segList"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Top Factors Influencing Churn</h3><span class="hint">SHAP</span></div>
+          <div class="bars" id="factorBars"></div>
+        </div>
+      </div>
+
+      <div class="grid bottom">
+        <div class="card">
+          <div class="card-head"><h3>Customer Predictions</h3><span class="hint" id="tableHint"></span></div>
+          <div class="toolbar">
+            <label class="search"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <input id="tableSearch" placeholder="Search customer…"></label>
+            <div id="filters" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+            <a class="btn" id="exportBtn" href="#"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Export</a>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th data-sort="customerID">Customer</th>
+                <th data-sort="churn_probability">Churn Probability</th>
+                <th data-sort="segment">Segment</th>
+                <th class="nosort">Main Factors</th>
+                <th data-sort="offer_expected_value_usd">Recommended Action</th>
+                <th class="nosort">Action</th>
+              </tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager"><span id="pageInfo"></span><div class="pages" id="pages"></div></div>
+        </div>
+
+        <div class="card insight" id="insight"><div class="placeholder">Select a customer to see insights.</div></div>
+      </div>
+    </section>
+
+    <!-- ============================================================ WHAT-IF -->
+    <section class="view" id="view-whatif">
+      <div class="hero"><div><h1>What-If Simulator</h1>
+        <p>Change a customer's profile and see churn risk and the offer decision update live.</p></div></div>
+      <div class="grid whatif">
+        <div class="card"><form class="form-grid" id="whatifForm"></form></div>
+        <div class="card" id="whatifResult"></div>
+      </div>
+    </section>
+
+    <!-- ============================================================ ACTIONS -->
+    <section class="view" id="view-actions">
+      <div class="hero"><div><h1>Retention Actions</h1>
+        <p>Your campaign plan. Add customers from their insight panel, then export the list.</p></div></div>
+      <div class="card" id="actionsBody"></div>
+    </section>
+
+    <!-- ============================================================ MODEL -->
+    <section class="view" id="view-model">
+      <div class="hero"><div><h1>Model Performance</h1>
+        <p>Held-out test results for the churn model and the uplift targeting policy.</p></div></div>
+      <div class="grid metrics" id="metrics"></div>
+      <div class="grid figs">
+        <div class="card"><h3>Targeting policy value (realistic scenario)</h3><div class="chart-box" style="height:280px"><canvas id="policyChart"></canvas></div></div>
+        <div class="card"><h3>When does uplift beat risk targeting?</h3><img src="/figures/uplift_scenarios.png" alt="Scenario comparison of targeting policies"></div>
+        <div class="card"><h3>ROC &amp; precision-recall</h3><img src="/figures/model_roc_pr.png" alt="ROC and PR curves"></div>
+        <div class="card"><h3>SHAP summary</h3><img src="/figures/shap_summary.png" alt="SHAP summary plot"></div>
+        <div class="card"><h3>Qini curve</h3><img src="/figures/uplift_qini.png" alt="Qini curves of uplift learners"></div>
+        <div class="card"><h3>Offer effect by contract</h3><img src="/figures/uplift_by_contract.png" alt="True vs estimated offer effect by contract"></div>
+      </div>
+    </section>
+
+    <!-- ============================================================ ABOUT -->
+    <section class="view" id="view-about">
+      <div class="hero"><div><h1>How It Works</h1><p>From raw customer data to a profitable retention decision.</p></div></div>
+      <div class="card prose">
+        <h3 style="margin-top:0">1. Predict who will churn</h3>
+        <p>An XGBoost model (tuned with 5-fold cross-validation, compared against a logistic-regression baseline)
+          estimates each customer's churn probability from contract, tenure, services, billing and payment data.</p>
+        <h3>2. Explain why</h3>
+        <p>SHAP values break every prediction into per-feature contributions, so each customer gets their own
+          top risk factors, not just a global feature ranking.</p>
+        <h3>3. Decide who to target, with uplift modelling</h3>
+        <p>High risk does not mean a discount will help. An S-learner estimates how much the offer
+          <em>changes</em> each customer's churn probability. Customers are grouped into:</p>
+        <ul id="segExplain"></ul>
+        <p>An offer is sent only when <code>uplift × monthly bill × 12 − discount cost</code> exceeds a $20 margin.</p>
+        <h3>4. Honest caveat</h3>
+        <p>Public churn data has no record of past offers, so the offer experiment is <strong>semi-synthetic</strong>:
+          real customers and churn baselines, with a simulated randomized offer whose true effect is known. That lets
+          the targeting be scored exactly. In production you would train the uplift model on a real A/B pilot.
+          Individual uplift estimates are noisy; the model is most reliable for ranking groups of customers.</p>
+        <p>REST API docs: <a href="/docs">/docs</a></p>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+<script src="/static/app.js?v=3"></script>
+</body>
+</html>

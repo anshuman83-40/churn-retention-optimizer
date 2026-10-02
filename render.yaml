@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: churn-retention-optimizer
+    runtime: docker
+    plan: free
+    healthCheckPath: /health

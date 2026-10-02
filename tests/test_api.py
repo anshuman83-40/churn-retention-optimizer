@@ -38,3 +38,27 @@ def test_batch_and_validation(client, customer, loyal_customer):
     r = client.post("/predict/batch", json=[customer, loyal_customer])
     assert r.status_code == 200 and len(r.json()) == 2
     assert client.post("/predict", json={**customer, "Contract": "Weekly"}).status_code == 422
+
+
+def test_dashboard_summary(client):
+    s = client.get("/api/summary").json()
+    assert s["kpis"]["total_customers"] == 7043
+    assert abs(sum(seg["share"] for seg in s["segments"]) - 1) < 1e-3
+    assert len(s["churn_by_tenure"]["actual"]) == len(s["churn_by_tenure"]["labels"])
+
+
+def test_customer_table_filter_and_detail(client):
+    page = client.get("/api/customers", params={"segment": "persuadable", "size": 5}).json()
+    assert page["total"] > 0 and len(page["rows"]) == 5
+    assert all(r["segment"] == "Persuadable" for r in page["rows"])
+    probs = [r["churn_probability"] for r in page["rows"]]
+    assert probs == sorted(probs, reverse=True)
+    detail = client.get(f"/api/customers/{page['rows'][0]['customerID']}").json()
+    assert detail["recommendation"] == "send_offer" and detail["actions"]
+    assert client.get("/api/customers/NOT-A-CUSTOMER").status_code == 404
+
+
+def test_export_and_frontend(client):
+    csv = client.get("/api/customers/export.csv", params={"segment": "loyal"}).text.splitlines()
+    assert csv[0].startswith("customerID") and all(",Loyal," in line for line in csv[1:])
+    assert "ChurnOpt" in client.get("/").text

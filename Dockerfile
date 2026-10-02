@@ -9,13 +9,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY pyproject.toml .
 COPY src/ src/
 COPY api/ api/
-COPY app/ app/
+COPY web/ web/
 COPY models/ models/
 COPY reports/ reports/
 COPY data/raw/ data/raw/
 RUN pip install --no-cache-dir --no-deps .
 
 EXPOSE 8000
-# Default: REST API. For the dashboard:
-#   docker run -p 8501:8501 churn-optimizer streamlit run app/dashboard.py --server.port 8501 --server.address 0.0.0.0
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Serves the web dashboard at / and the REST API at /docs. Hosts like Render set $PORT.
+CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

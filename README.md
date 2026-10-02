@@ -8,6 +8,35 @@ some high-risk customers will leave no matter what (**lost causes**), some would
 **causal uplift model** that estimates how much a discount *changes* each customer's behaviour, and
 targets offers by expected profit.
 
+**Live demo:** _add your Render link here_ · **API docs:** `/docs`
+
+<!-- Add a screenshot of the dashboard: docs/dashboard.png -->
+
+## Dashboard
+
+A custom web app (HTML/CSS/JS + Chart.js) served by the FastAPI backend, scoring all 7,043 customers:
+
+- **Dashboard**: KPIs (predicted churn rate, 12-month revenue at risk, customers worth saving), churn by
+  tenure (actual vs predicted), uplift segments, top SHAP churn drivers, and a searchable, sortable,
+  filterable customer table with CSV export
+- **Customer insight panel**: churn probability, revenue at risk, per-customer SHAP factors, offer economics
+  and recommended actions you can add to a retention plan
+- **What-If Simulator**: edit any customer profile and watch risk and the offer decision update live
+- **Retention Actions**: your campaign plan, downloadable as CSV
+- **Model Performance** and **How It Works** pages
+
+Every number on screen comes from the models. There are no invented names, dates or trends.
+
+**Uplift segments** used across the app:
+
+| Segment | Meaning | Action |
+|---|---|---|
+| Persuadable | Offer expected to pay off (> $20 expected value) | Send the offer |
+| Lost Cause | High risk, but a discount won't change the outcome | Fix the service issue instead |
+| Sleeping Dog | Offer is likely to *increase* churn | Do not contact |
+| Loyal | Low churn risk | No retention spend |
+| Monitor | Moderate risk, offer not worth it yet | Watch |
+
 ![Policy value](reports/figures/uplift_policy_value.png)
 
 ## Results
@@ -67,7 +96,7 @@ raw CSV ──► clean + feature engineering ──► XGBoost churn model ─�
               S / T / X meta-learners ──► uplift τ̂(x) ──► expected value ──► offer decision
                                                                              │
                                          FastAPI  /predict  ◄────────────────┤
-                                         Streamlit dashboard ◄───────────────┘
+                                         Web dashboard (/)  ◄────────────────┘
 ```
 
 **Why semi-synthetic?** Public churn datasets have no record of who received offers, so uplift cannot be
@@ -85,6 +114,9 @@ score targeting policies exactly. **In production you would replace step 1–3 w
 randomized pilot campaign**; the rest of the pipeline is unchanged.
 
 **Expected value of an offer** = `uplift × monthly bill × 12` − `discount × 3 months × P(stays | offer)`.
+The policy evaluation above sends offers when this is > 0. The live app requires > $20, because individual
+uplift estimates are noisy (the model ranks groups well, single customers less precisely) and contacting a
+customer has a cost.
 
 ## Project structure
 
@@ -96,10 +128,11 @@ src/churn/
   learners.py    S-, T-, X-learner uplift models
   uplift.py      experiment simulation, Qini evaluation, policy economics, scenarios
   predict.py     inference: risk + reasons + recommendation
+  service.py     scores the customer base; KPIs, segments, table queries for the dashboard
   pipeline.py    runs everything end to end
-api/main.py      FastAPI service (typed request validation)
-app/dashboard.py Streamlit dashboard: single customer, campaign planner, model insights
-tests/           pytest: data, uplift logic, API behaviour
+api/main.py      FastAPI: /predict, /api/* dashboard endpoints, serves the web app
+web/             dashboard frontend (index.html, styles.css, app.js)
+tests/           pytest: data, uplift logic, API + dashboard endpoints
 ```
 
 ## Run it
@@ -109,17 +142,20 @@ python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\
 pip install -r requirements-dev.txt && pip install -e .
 
 python -m churn.pipeline                 # EDA -> train -> uplift (~2 min), writes models/ and reports/
-pytest -q                                # 12 tests
+pytest -q                                # 15 tests
 
-streamlit run app/dashboard.py           # dashboard  -> http://localhost:8501
-uvicorn api.main:app --reload            # REST API   -> http://localhost:8000/docs
+uvicorn api.main:app --reload            # dashboard -> http://localhost:8000, API docs -> /docs
 ```
 
 Docker:
 
 ```bash
-docker compose up --build                # API on :8000, dashboard on :8501
+docker compose up --build                # dashboard + API on :8000
 ```
+
+Deploy (free): push to GitHub, then on [render.com](https://render.com) choose **New → Blueprint** and pick
+this repo. [`render.yaml`](render.yaml) builds the Docker image. The first load takes ~30 s while the free
+instance wakes up and scores the customer base.
 
 Example request:
 
