@@ -49,6 +49,9 @@ FEATURES = NUMERIC_FEATURES + CATEGORICAL_FEATURES
 OFFER_DISCOUNT = 0.20       # 20% off the monthly bill...
 OFFER_MONTHS = 3            # ...for 3 months
 CLV_MONTHS = 12             # revenue horizon used to value a retained customer
+# Serving rule: only send an offer when its expected return clears this margin. Individual uplift
+# estimates are noisy; the margin absorbs that noise and the cost of contacting the customer.
+MIN_OFFER_VALUE = 20.0
 
 for _d in (PROCESSED_DIR, MODELS_DIR, FIGURES_DIR):
     _d.mkdir(parents=True, exist_ok=True)

@@ -5,7 +5,7 @@ import joblib
 import numpy as np
 import shap
 
-from .config import CHURN_MODEL_PATH, UPLIFT_MODEL_PATH
+from .config import CHURN_MODEL_PATH, MIN_OFFER_VALUE, UPLIFT_MODEL_PATH
 from .data import prepare_input
 from .features import aggregate_by_feature, original_feature_groups
 from .uplift import offer_economics
@@ -26,7 +26,7 @@ def risk_level(p: float) -> str:
 
 
 def recommend(uplift: float, value: float, p0: float) -> tuple[str, str]:
-    if value > 0:
+    if value > MIN_OFFER_VALUE:
         return "send_offer", "Offer is expected to keep this customer and pay for itself."
     if uplift < -0.01:
         return "do_not_send", "Offer may backfire: likely to prompt this customer to reconsider."

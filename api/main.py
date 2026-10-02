@@ -1,18 +1,26 @@
 """FastAPI service: POST customer data, get churn risk + retention recommendation."""
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from churn import service
+from churn.config import FIGURES_DIR
 from churn.predict import load_models, score
 
+WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 YesNo = Literal["Yes", "No"]
 YesNoNoInternet = Literal["Yes", "No", "No internet service"]
+
 
 @asynccontextmanager
 async def lifespan(_app):
     load_models()  # warm the models once at startup
+    service.customer_base()  # score the whole customer base for the dashboard
     yield
 
 
@@ -89,3 +97,40 @@ def predict(customer: Customer):
 @app.post("/predict/batch", response_model=list[Prediction])
 def predict_batch(customers: list[Customer]):
     return score(_records(customers)) if customers else []
+
+
+# ------------------------------------------------------------------ dashboard data
+@app.get("/api/summary", tags=["dashboard"])
+def api_summary():
+    return service.summary()
+
+
+@app.get("/api/customers", tags=["dashboard"])
+def api_customers(segment: str = "all", q: str = "", sort: str = "churn_probability", desc: bool = True,
+                  page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)):
+    return service.page(segment, q, sort, desc, page, size)
+
+
+@app.get("/api/customers/export.csv", tags=["dashboard"])
+def api_export(segment: str = "all", q: str = ""):
+    df = service.query(segment, q)[service.TABLE_COLS]
+    return Response(df.to_csv(index=False), media_type="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename=customers_{segment}.csv"})
+
+
+@app.get("/api/customers/{customer_id}", tags=["dashboard"])
+def api_customer(customer_id: str):
+    c = service.customer(customer_id)
+    if c is None:
+        raise HTTPException(404, "customer not found")
+    return c
+
+
+# ------------------------------------------------------------------ web frontend
+app.mount("/figures", StaticFiles(directory=FIGURES_DIR), name="figures")
+app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    return FileResponse(WEB_DIR / "index.html")
