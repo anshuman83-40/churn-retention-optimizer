@@ -1,5 +1,7 @@
 # 📉 Churn & Retention Optimizer
 
+[![CI](https://github.com/anshuman83-40/churn-retention-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/anshuman83-40/churn-retention-optimizer/actions/workflows/ci.yml)
+
 **Predict which customers will churn, explain why, and decide who is actually worth a retention offer.**
 
 Most churn projects stop at *"who is likely to leave?"*. That is the wrong question for a marketing budget:
@@ -8,7 +10,9 @@ some high-risk customers will leave no matter what (**lost causes**), some would
 **causal uplift model** that estimates how much a discount *changes* each customer's behaviour, and
 targets offers by expected profit.
 
-**Live demo:** _add your Render link here_ · **API docs:** `/docs`
+**🔗 Live demo: [churn-retention-optimizer.onrender.com](https://churn-retention-optimizer.onrender.com)** · **API docs: [/docs](https://churn-retention-optimizer.onrender.com/docs)**
+
+> Free hosting: the first visit after a quiet period takes ~1 minute while the server wakes up.
 
 <!-- Add a screenshot of the dashboard: docs/dashboard.png -->
 
