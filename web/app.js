@@ -20,6 +20,7 @@ const SEG = {
   "Loyal": { color: "#22c55e", key: "loyal" },
   "Monitor": { color: "#f5a524", key: "monitor" },
 };
+const SEG_INITIALS = { "Persuadable": "PE", "Lost Cause": "LC", "Sleeping Dog": "SD", "Loyal": "LO", "Monitor": "MO" };
 const FILTERS = [
   ["all", "All"], ["high", "High Risk"], ["persuadable", "Persuadable"],
   ["lost_cause", "Lost Cause"], ["sleeping_dog", "Sleeping Dog"], ["loyal", "Loyal"],
@@ -152,6 +153,7 @@ function renderFilters() {
 function setFilter(k) {
   state.segment = k;
   state.page = 1;
+  state.selected = null; // show the top customer of the new list in the insight panel
   renderFilters();
   loadTable();
   $(".bottom").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -232,7 +234,7 @@ function renderInsight() {
         <span class="num" style="font-size:12.5px">${f.impact.toFixed(2)}</span></div>`).join("") + `<div class="hint">SHAP impact on churn log-odds</div>`
       : `<div class="hint">No factors pushing this customer toward churn.</div>`,
     profile: `<div class="kv">
-      <span>Contract</span><b>${esc(c.Contract)}</b><span>Tenure</span><b>${c.tenure} months</b>
+      <span>Contract</span><b>${esc(c.Contract)}</b><span>Tenure</span><b>${c.tenure} month${c.tenure === 1 ? "" : "s"}</b>
       <span>Monthly bill</span><b>$${c.MonthlyCharges.toFixed(2)}</b><span>Internet</span><b>${esc(c.InternetService)}</b>
       <span>Tech support</span><b>${esc(c.TechSupport)}</b><span>Payment</span><b>${esc(c.PaymentMethod)}</b>
       <span>Senior / Partner</span><b>${esc(c.SeniorCitizen)} / ${esc(c.Partner)}</b><span>Paperless</span><b>${esc(c.PaperlessBilling)}</b></div>`,
@@ -247,7 +249,7 @@ function renderInsight() {
     <div class="card-head"><h3>Customer Insight</h3><div style="display:flex;gap:8px"><a class="btn sm" href="#whatif" id="toWhatIf">Simulate</a>
       <button class="btn sm sheet-close" id="closeSheet" aria-label="Close">✕</button></div></div>
     <div class="cust-head">
-      <div class="avatar" style="color:${SEG[c.segment].color}">${esc(c.customerID.slice(0, 2))}</div>
+      <div class="avatar" style="color:${SEG[c.segment].color}">${SEG_INITIALS[c.segment]}</div>
       <div><div class="id mono">${esc(c.customerID)}</div><div class="meta">${esc(c.gender)} · ${c.tenure} mo · ${esc(c.Contract)}</div></div>
       ${tag(c.segment)}
     </div>
@@ -432,7 +434,7 @@ async function init() {
     loadTable();
   }));
   let t;
-  $("#tableSearch").addEventListener("input", (e) => { clearTimeout(t); t = setTimeout(() => { state.q = e.target.value.trim(); state.page = 1; loadTable(); }, 250); });
+  $("#tableSearch").addEventListener("input", (e) => { clearTimeout(t); t = setTimeout(() => { state.q = e.target.value.trim(); state.page = 1; state.selected = null; loadTable(); }, 250); });
   $("#globalSearch").addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     state.q = e.target.value.trim(); state.page = 1; $("#tableSearch").value = state.q;
