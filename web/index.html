@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=3">
+  <link rel="stylesheet" href="/static/styles.css?v=9">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%235b6eff'/><path d='M8 20l5-5 4 4 7-8' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round'/></svg>">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
@@ -93,7 +93,7 @@
           <div class="toolbar">
             <label class="search"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
               <input id="tableSearch" placeholder="Search customer…"></label>
-            <div id="filters" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+            <div id="filters" class="filters"></div>
             <a class="btn" id="exportBtn" href="#"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Export</a>
           </div>
           <div class="table-wrap">
@@ -124,6 +124,7 @@
         <div class="card"><form class="form-grid" id="whatifForm"></form></div>
         <div class="card" id="whatifResult"></div>
       </div>
+      <button class="whatif-sticky" id="whatifSticky" aria-label="Show prediction details"></button>
     </section>
 
     <!-- ============================================================ ACTIONS -->
@@ -173,7 +174,8 @@
     </section>
   </main>
 </div>
+<div class="backdrop" id="sheetBackdrop"></div>
 <div class="toast" id="toast"></div>
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=9"></script>
 </body>
 </html>

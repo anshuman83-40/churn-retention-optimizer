@@ -133,4 +133,5 @@ app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(WEB_DIR / "index.html")
+    # Always revalidate the page so new asset versions (?v=N) are picked up after a deploy.
+    return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})

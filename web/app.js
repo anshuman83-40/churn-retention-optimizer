@@ -3,7 +3,10 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pct = (v, d = 1) => `${(v * 100).toFixed(d)}%`;
-const usd = (v) => (Math.abs(v) >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : Math.abs(v) >= 1e4 ? `$${(v / 1e3).toFixed(1)}k` : `$${Math.round(v).toLocaleString()}`);
+const usd = (v) => {
+  const a = Math.abs(v), sign = v < 0 ? "-" : "";
+  return sign + (a >= 1e6 ? `$${(a / 1e6).toFixed(2)}M` : a >= 1e4 ? `$${(a / 1e3).toFixed(1)}k` : `$${Math.round(a).toLocaleString()}`);
+};
 const api = async (path, opts) => {
   const r = await fetch(path, opts);
   if (!r.ok) throw new Error(`${r.status} ${path}`);
@@ -76,6 +79,7 @@ function route() {
   if (state.view === "actions") renderActions();
   if (state.view === "model") renderModel();
   $("#sidebar").classList.remove("open");
+  openSheet(false);
   window.scrollTo(0, 0);
 }
 
@@ -164,15 +168,15 @@ async function loadTable() {
   });
   $("#rows").innerHTML = data.rows.length ? data.rows.map((r) => `
     <tr data-id="${esc(r.customerID)}" class="${r.customerID === state.selected ? "selected" : ""}">
-      <td><div class="mono">${esc(r.customerID)}</div><div class="hint">${esc(r.Contract)} · ${r.tenure} mo · $${Math.round(r.MonthlyCharges)}/mo</div></td>
-      <td><div class="prob"><b style="color:${riskColor(r.churn_probability)}">${Math.round(r.churn_probability * 100)}%</b>
+      <td class="c-id"><div class="mono">${esc(r.customerID)}</div><div class="hint">${esc(r.Contract)} · ${r.tenure} mo · $${Math.round(r.MonthlyCharges)}/mo</div></td>
+      <td class="c-prob"><div class="prob"><b style="color:${riskColor(r.churn_probability)}">${Math.round(r.churn_probability * 100)}%</b>
         <div class="bar-track"><div class="bar-fill" style="width:${r.churn_probability * 100}%;background:${riskColor(r.churn_probability)}"></div></div></div></td>
-      <td>${tag(r.segment)}</td>
-      <td class="factors-cell" title="${esc(r.main_factors)}">${esc(r.main_factors)}</td>
-      <td>${esc(r.primary_action)}</td>
-      <td><button class="btn primary sm" data-view-id="${esc(r.customerID)}">View</button></td>
+      <td class="c-seg">${tag(r.segment)}</td>
+      <td class="factors-cell c-fac" title="${esc(r.main_factors)}">${esc(r.main_factors)}</td>
+      <td class="c-act">${esc(r.primary_action)}</td>
+      <td class="c-btn"><button class="btn primary sm" data-view-id="${esc(r.customerID)}">View</button></td>
     </tr>`).join("") : `<tr><td colspan="6" class="empty">No customers match.</td></tr>`;
-  $$("#rows tr[data-id]").forEach((tr) => tr.addEventListener("click", () => selectCustomer(tr.dataset.id)));
+  $$("#rows tr[data-id]").forEach((tr) => tr.addEventListener("click", () => selectCustomer(tr.dataset.id, true)));
 
   const pages = Math.max(1, Math.ceil(data.total / state.size));
   const from = data.total ? (state.page - 1) * state.size + 1 : 0;
@@ -193,12 +197,20 @@ async function loadTable() {
 }
 
 /* ------------------------------------------------------------------ insight panel */
-async function selectCustomer(id) {
+const isPhone = () => window.matchMedia("(max-width: 900px)").matches;
+function openSheet(open) {
+  $("#insight").classList.toggle("open", open);
+  $("#sheetBackdrop").classList.toggle("show", open);
+  document.body.classList.toggle("no-scroll", open);
+}
+async function selectCustomer(id, fromTap = false) {
   state.selected = id;
   $$("#rows tr").forEach((tr) => tr.classList.toggle("selected", tr.dataset.id === id));
   state.detail = await api(`/api/customers/${encodeURIComponent(id)}`);
   renderInsight();
-  if (window.innerWidth < 1180 && document.activeElement?.closest("#rows")) $("#insight").scrollIntoView({ behavior: "smooth" });
+  if (!fromTap) return;
+  if (isPhone()) openSheet(true);
+  else if (window.innerWidth < 1180) $("#insight").scrollIntoView({ behavior: "smooth" });
 }
 
 function spark(values, color) {
@@ -231,7 +243,9 @@ function renderInsight() {
       <div class="reason">${esc(c.segment_description)}</div><div class="reason">${esc(c.recommendation_reason)}</div>`,
   };
   $("#insight").innerHTML = `
-    <div class="card-head"><h3>Customer Insight</h3><a class="btn sm" href="#whatif" id="toWhatIf">Simulate</a></div>
+    <div class="sheet-handle"></div>
+    <div class="card-head"><h3>Customer Insight</h3><div style="display:flex;gap:8px"><a class="btn sm" href="#whatif" id="toWhatIf">Simulate</a>
+      <button class="btn sm sheet-close" id="closeSheet" aria-label="Close">✕</button></div></div>
     <div class="cust-head">
       <div class="avatar" style="color:${SEG[c.segment].color}">${esc(c.customerID.slice(0, 2))}</div>
       <div><div class="id mono">${esc(c.customerID)}</div><div class="meta">${esc(c.gender)} · ${c.tenure} mo · ${esc(c.Contract)}</div></div>
@@ -248,6 +262,7 @@ function renderInsight() {
         <button class="btn primary sm" id="applyBtn">${inCampaign ? "Update plan" : "Add to plan"}</button></div>
       ${c.actions.map((a, i) => `<label class="check"><input type="checkbox" value="${esc(a)}" ${i < 2 || inCampaign ? "checked" : ""}>${esc(a)}</label>`).join("")}
     </div>`;
+  $("#closeSheet").addEventListener("click", () => openSheet(false));
   $$("#insight .tabs button").forEach((b) => b.addEventListener("click", () => { state.tab = b.dataset.tab; renderInsight(); }));
   $("#applyBtn").addEventListener("click", () => {
     const actions = $$("#insight .check input:checked").map((i) => i.value);
@@ -321,6 +336,10 @@ async function predictWhatIf() {
     const body = { ...whatIf, TotalCharges: whatIf.tenure * whatIf.MonthlyCharges };
     const r = await api("/predict", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const color = riskColor(r.churn_probability);
+    $("#whatifSticky").innerHTML = `<b style="color:${color}">${Math.round(r.churn_probability * 100)}%</b>
+      <span>${r.risk_level} risk</span><span class="sep"></span>
+      <span class="${r.recommendation === "send_offer" ? "ok" : "no"}">${r.recommendation === "send_offer" ? "✓ Send offer" : "✕ No offer"}</span>
+      <span class="more">Details ↓</span>`;
     $("#whatifResult").innerHTML = `
       <h3>Prediction</h3>
       <div class="gauge"><canvas id="gauge"></canvas><div class="gauge-center"><b style="color:${color}">${Math.round(r.churn_probability * 100)}%</b><span class="hint">${r.risk_level.toUpperCase()} churn risk</span></div></div>
@@ -353,9 +372,9 @@ function renderActions() {
     <div class="card-head"><h3>${ids.length} customer${ids.length > 1 ? "s" : ""} in plan · expected offer value ${usd(total)}</h3>
       <div style="display:flex;gap:8px"><button class="btn" id="clearPlan">Clear</button><button class="btn primary" id="dlPlan">Download CSV</button></div></div>
     <div class="table-wrap"><table><thead><tr><th class="nosort">Customer ID</th><th class="nosort">Segment</th><th class="nosort">Churn</th><th class="nosort">Offer value</th><th class="nosort">Planned actions</th><th class="nosort"></th></tr></thead>
-    <tbody>${ids.map((id) => { const c = camp[id]; return `<tr data-id="${esc(id)}"><td class="mono">${esc(id)}</td><td>${tag(c.segment)}</td>
-      <td style="color:${riskColor(c.prob)}">${Math.round(c.prob * 100)}%</td><td>${usd(c.value)}</td>
-      <td style="white-space:normal">${c.actions.map(esc).join("<br>")}</td><td><button class="btn sm" data-remove="${esc(id)}">Remove</button></td></tr>`; }).join("")}</tbody></table></div>`;
+    <tbody>${ids.map((id) => { const c = camp[id]; return `<tr data-id="${esc(id)}"><td class="mono a-id">${esc(id)}</td><td class="a-seg">${tag(c.segment)}</td>
+      <td class="a-prob" style="color:${riskColor(c.prob)}">${Math.round(c.prob * 100)}% <span class="ph-label">churn</span></td><td class="a-val">${usd(c.value)} <span class="ph-label">offer value</span></td>
+      <td class="a-acts" style="white-space:normal">${c.actions.map(esc).join("<br>")}</td><td class="a-rm"><button class="btn sm" data-remove="${esc(id)}">Remove</button></td></tr>`; }).join("")}</tbody></table></div>`;
   $$("[data-remove]").forEach((b) => b.addEventListener("click", (e) => {
     e.stopPropagation();
     const c = store.get(); delete c[b.dataset.remove]; store.set(c); updateCampaignBadge(); renderActions();
@@ -372,6 +391,14 @@ function renderActions() {
 }
 
 /* ------------------------------------------------------------------ model view */
+const SHORT_POLICY = {
+  "Offer to everyone": "Everyone",
+  "Top 20% by churn risk (traditional)": "Risk, top 20%",
+  "Top 20% by predicted uplift": "Uplift, top 20%",
+  "Churn risk, same # of offers as uplift policy": "Risk, same budget",
+  "Uplift model: offer if expected value > 0": "Uplift, value > 0",
+  "Oracle (true effect, upper bound)": "Oracle (max)",
+};
 function renderModel() {
   const m = state.summary?.model;
   if (!m || renderModel.done) return;
@@ -387,7 +414,7 @@ function renderModel() {
   const pol = m.policies.filter((p) => p.policy !== "No offers");
   new Chart($("#policyChart"), {
     type: "bar",
-    data: { labels: pol.map((p) => p.policy.replace(" (traditional)", "").replace(" (true effect, upper bound)", "")),
+    data: { labels: pol.map((p) => SHORT_POLICY[p.policy] || p.policy),
       datasets: [{ data: pol.map((p) => p.net_value_usd), borderRadius: 6,
         backgroundColor: pol.map((p) => (p.net_value_usd < 0 ? "#f25f5c" : p.policy.includes("uplift") || p.policy.includes("Uplift") ? "#4f8cff" : p.policy.startsWith("Oracle") ? "#2dd4bf" : "#5d6a88")) }] },
     options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` Net value ${usd(c.parsed.x)}` } } },
@@ -411,7 +438,9 @@ async function init() {
     state.q = e.target.value.trim(); state.page = 1; $("#tableSearch").value = state.q;
     if (location.hash !== "#customers") location.hash = "#customers"; else loadTable();
   });
-  $("#menuBtn").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
+  $("#whatifSticky").addEventListener("click", () => $("#whatifResult").scrollIntoView({ behavior: "smooth" }));
+  $("#menuBtn").addEventListener("click", () => { $("#sidebar").classList.toggle("open"); $("#sheetBackdrop").classList.toggle("show", $("#sidebar").classList.contains("open")); });
+  $("#sheetBackdrop").addEventListener("click", () => { openSheet(false); $("#sidebar").classList.remove("open"); });
   document.addEventListener("click", (e) => { if (e.target.id === "toWhatIf") renderWhatIf.fromInsight = true; });
 
   try {
