@@ -1,0 +1,275 @@
+{
+  "serving_scenario": "realistic",
+  "selected_learner": "S-learner",
+  "learners": {
+    "S-learner": {
+      "qini_coefficient": 0.0052,
+      "corr_with_true_uplift": 0.7801,
+      "pehe": 0.0595
+    },
+    "T-learner": {
+      "qini_coefficient": 0.0014,
+      "corr_with_true_uplift": 0.432,
+      "pehe": 0.1198
+    },
+    "X-learner": {
+      "qini_coefficient": 0.0021,
+      "corr_with_true_uplift": 0.4398,
+      "pehe": 0.1003
+    },
+    "churn-risk ranking (non-causal)": {
+      "qini_coefficient": 0.0042,
+      "corr_with_true_uplift": 0.3243
+    }
+  },
+  "policies": [
+    {
+      "policy": "No offers",
+      "customers_targeted": 0,
+      "churners_prevented": 0.0,
+      "net_value_usd": 0.0,
+      "discount_cost_usd": 0.0
+    },
+    {
+      "policy": "Offer to everyone",
+      "customers_targeted": 2113,
+      "churners_prevented": 84.9,
+      "net_value_usd": -3745.0,
+      "discount_cost_usd": 60229.0
+    },
+    {
+      "policy": "Top 20% by churn risk (traditional)",
+      "customers_targeted": 422,
+      "churners_prevented": 27.7,
+      "net_value_usd": 12913.0,
+      "discount_cost_usd": 7769.0
+    },
+    {
+      "policy": "Top 20% by predicted uplift",
+      "customers_targeted": 422,
+      "churners_prevented": 65.3,
+      "net_value_usd": 31013.0,
+      "discount_cost_usd": 9486.0
+    },
+    {
+      "policy": "Churn risk, same # of offers as uplift policy",
+      "customers_targeted": 865,
+      "churners_prevented": 69.4,
+      "net_value_usd": 28921.0,
+      "discount_cost_usd": 20667.0
+    },
+    {
+      "policy": "Uplift model: offer if expected value > 0",
+      "customers_targeted": 865,
+      "churners_prevented": 78.6,
+      "net_value_usd": 33661.0,
+      "discount_cost_usd": 19253.0
+    },
+    {
+      "policy": "Oracle (true effect, upper bound)",
+      "customers_targeted": 563,
+      "churners_prevented": 86.7,
+      "net_value_usd": 45383.0,
+      "discount_cost_usd": 14981.0
+    }
+  ],
+  "headline": {
+    "uplift_policy_net_value": 33661.0,
+    "churn_risk_top20_net_value": 12913.0,
+    "churn_risk_same_budget_net_value": 28921.0,
+    "offer_everyone_net_value": -3745.0,
+    "oracle_net_value": 45383.0
+  },
+  "scenarios": {
+    "risk_aligned": {
+      "description": "Offer effect grows with churn risk: the riskiest customers are also the most persuadable.",
+      "selected_learner": "S-learner",
+      "learners": {
+        "S-learner": {
+          "qini_coefficient": 0.0143,
+          "corr_with_true_uplift": 0.8281,
+          "pehe": 0.0567
+        },
+        "T-learner": {
+          "qini_coefficient": 0.0055,
+          "corr_with_true_uplift": 0.5464,
+          "pehe": 0.1303
+        },
+        "X-learner": {
+          "qini_coefficient": 0.0081,
+          "corr_with_true_uplift": 0.6075,
+          "pehe": 0.1082
+        },
+        "churn-risk ranking (non-causal)": {
+          "qini_coefficient": 0.0135,
+          "corr_with_true_uplift": 0.9121
+        }
+      },
+      "policies": [
+        {
+          "policy": "No offers",
+          "customers_targeted": 0,
+          "churners_prevented": 0.0,
+          "net_value_usd": 0.0,
+          "discount_cost_usd": 0.0
+        },
+        {
+          "policy": "Offer to everyone",
+          "customers_targeted": 2113,
+          "churners_prevented": 173.4,
+          "net_value_usd": 81856.0,
+          "discount_cost_usd": 64591.0
+        },
+        {
+          "policy": "Top 20% by churn risk (traditional)",
+          "customers_targeted": 422,
+          "churners_prevented": 97.0,
+          "net_value_usd": 80292.0,
+          "discount_cost_usd": 11512.0
+        },
+        {
+          "policy": "Top 20% by predicted uplift",
+          "customers_targeted": 422,
+          "churners_prevented": 86.8,
+          "net_value_usd": 65499.0,
+          "discount_cost_usd": 11355.0
+        },
+        {
+          "policy": "Churn risk, same # of offers as uplift policy",
+          "customers_targeted": 1068,
+          "churners_prevented": 170.6,
+          "net_value_usd": 116639.0,
+          "discount_cost_usd": 32218.0
+        },
+        {
+          "policy": "Uplift model: offer if expected value > 0",
+          "customers_targeted": 1068,
+          "churners_prevented": 169.0,
+          "net_value_usd": 114884.0,
+          "discount_cost_usd": 30515.0
+        },
+        {
+          "policy": "Oracle (true effect, upper bound)",
+          "customers_targeted": 1100,
+          "churners_prevented": 176.3,
+          "net_value_usd": 120140.0,
+          "discount_cost_usd": 31539.0
+        }
+      ],
+      "policy_value": {
+        "No offers": 0.0,
+        "Offer to everyone": 81856.0,
+        "Top 20% by churn risk (traditional)": 80292.0,
+        "Top 20% by predicted uplift": 65499.0,
+        "Churn risk, same # of offers as uplift policy": 116639.0,
+        "Uplift model: offer if expected value > 0": 114884.0,
+        "Oracle (true effect, upper bound)": 120140.0
+      },
+      "headline": {
+        "uplift_policy_net_value": 114884.0,
+        "churn_risk_top20_net_value": 80292.0,
+        "churn_risk_same_budget_net_value": 116639.0,
+        "offer_everyone_net_value": 81856.0,
+        "oracle_net_value": 120140.0
+      }
+    },
+    "realistic": {
+      "description": "Service-quality churners are 'lost causes' a discount can't save; loyal customers are 'sleeping dogs' an offer can wake up.",
+      "selected_learner": "S-learner",
+      "learners": {
+        "S-learner": {
+          "qini_coefficient": 0.0052,
+          "corr_with_true_uplift": 0.7801,
+          "pehe": 0.0595
+        },
+        "T-learner": {
+          "qini_coefficient": 0.0014,
+          "corr_with_true_uplift": 0.432,
+          "pehe": 0.1198
+        },
+        "X-learner": {
+          "qini_coefficient": 0.0021,
+          "corr_with_true_uplift": 0.4398,
+          "pehe": 0.1003
+        },
+        "churn-risk ranking (non-causal)": {
+          "qini_coefficient": 0.0042,
+          "corr_with_true_uplift": 0.3243
+        }
+      },
+      "policies": [
+        {
+          "policy": "No offers",
+          "customers_targeted": 0,
+          "churners_prevented": 0.0,
+          "net_value_usd": 0.0,
+          "discount_cost_usd": 0.0
+        },
+        {
+          "policy": "Offer to everyone",
+          "customers_targeted": 2113,
+          "churners_prevented": 84.9,
+          "net_value_usd": -3745.0,
+          "discount_cost_usd": 60229.0
+        },
+        {
+          "policy": "Top 20% by churn risk (traditional)",
+          "customers_targeted": 422,
+          "churners_prevented": 27.7,
+          "net_value_usd": 12913.0,
+          "discount_cost_usd": 7769.0
+        },
+        {
+          "policy": "Top 20% by predicted uplift",
+          "customers_targeted": 422,
+          "churners_prevented": 65.3,
+          "net_value_usd": 31013.0,
+          "discount_cost_usd": 9486.0
+        },
+        {
+          "policy": "Churn risk, same # of offers as uplift policy",
+          "customers_targeted": 865,
+          "churners_prevented": 69.4,
+          "net_value_usd": 28921.0,
+          "discount_cost_usd": 20667.0
+        },
+        {
+          "policy": "Uplift model: offer if expected value > 0",
+          "customers_targeted": 865,
+          "churners_prevented": 78.6,
+          "net_value_usd": 33661.0,
+          "discount_cost_usd": 19253.0
+        },
+        {
+          "policy": "Oracle (true effect, upper bound)",
+          "customers_targeted": 563,
+          "churners_prevented": 86.7,
+          "net_value_usd": 45383.0,
+          "discount_cost_usd": 14981.0
+        }
+      ],
+      "policy_value": {
+        "No offers": 0.0,
+        "Offer to everyone": -3745.0,
+        "Top 20% by churn risk (traditional)": 12913.0,
+        "Top 20% by predicted uplift": 31013.0,
+        "Churn risk, same # of offers as uplift policy": 28921.0,
+        "Uplift model: offer if expected value > 0": 33661.0,
+        "Oracle (true effect, upper bound)": 45383.0
+      },
+      "headline": {
+        "uplift_policy_net_value": 33661.0,
+        "churn_risk_top20_net_value": 12913.0,
+        "churn_risk_same_budget_net_value": 28921.0,
+        "offer_everyone_net_value": -3745.0,
+        "oracle_net_value": 45383.0
+      }
+    }
+  },
+  "assumptions": {
+    "discount": 0.2,
+    "offer_months": 3,
+    "clv_months": 12,
+    "test_customers": 2113
+  }
+}

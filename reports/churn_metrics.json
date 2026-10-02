@@ -1,0 +1,61 @@
+{
+  "selected_model": "xgboost",
+  "metrics": {
+    "logistic_regression": {
+      "roc_auc": 0.8448,
+      "pr_auc": 0.6514,
+      "f1": 0.6235,
+      "precision": 0.5567,
+      "recall": 0.7086,
+      "brier": 0.1659,
+      "threshold": 0.5974
+    },
+    "xgboost": {
+      "roc_auc": 0.8467,
+      "pr_auc": 0.6675,
+      "f1": 0.6394,
+      "precision": 0.5808,
+      "recall": 0.7112,
+      "brier": 0.135,
+      "threshold": 0.3683,
+      "cv_roc_auc": 0.8504
+    }
+  },
+  "top_decile_lift": 2.81,
+  "xgb_params": {
+    "subsample": 0.7,
+    "reg_lambda": 10,
+    "n_estimators": 800,
+    "min_child_weight": 10,
+    "max_depth": 2,
+    "learning_rate": 0.01,
+    "colsample_bytree": 0.6
+  },
+  "feature_importance": {
+    "Contract": 0.6938,
+    "tenure": 0.3844,
+    "InternetService": 0.258,
+    "OnlineSecurity": 0.2435,
+    "TechSupport": 0.1742,
+    "PaymentMethod": 0.1566,
+    "PaperlessBilling": 0.1261,
+    "MonthlyCharges": 0.1259,
+    "avg_monthly_spend": 0.1115,
+    "MultipleLines": 0.0927,
+    "TotalCharges": 0.0861,
+    "tenure_group": 0.0796,
+    "OnlineBackup": 0.0691,
+    "StreamingMovies": 0.0515,
+    "StreamingTV": 0.046,
+    "Dependents": 0.0391,
+    "charge_increase": 0.0292,
+    "SeniorCitizen": 0.022,
+    "num_services": 0.0071,
+    "PhoneService": 0.0068,
+    "gender": 0.0041,
+    "DeviceProtection": 0.0024,
+    "Partner": 0.0004
+  },
+  "n_train": 5634,
+  "n_test": 1409
+}
