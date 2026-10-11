@@ -62,6 +62,7 @@ body {
 }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
+button, a, label, input, select { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 a { color: var(--green-ink); }
 h1, h3, h4 { font-weight: 500; letter-spacing: -0.01em; margin: 0; }
 .icon { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7;
@@ -462,6 +463,37 @@ body.no-scroll { overflow: hidden; }
   .whatif-sticky .ok { color: var(--green-ink); font-weight: 500; }
   .whatif-sticky .no { color: var(--amber); font-weight: 500; }
   .whatif-sticky .more { margin-left: auto; color: var(--green-ink); }
+}
+@media (max-width: 900px) {
+  /* touch: finger-sized targets, and 16px form text so iOS does not zoom on focus */
+  input, select, .search input, .ask input { font-size: 16px; }
+  .theme-toggle button { width: 42px; height: 40px; }
+  .theme-toggle .icon { width: 20px; height: 20px; }
+  .search { padding: 11px 14px; }
+  .seg-row { padding: 12px 8px; font-size: 14px; }
+  .pill { padding: 11px 15px; font-size: 13.5px; }
+  .btn, .btn.sm { min-height: 42px; padding-left: 14px; padding-right: 14px; font-size: 13.5px; }
+  .tabs button { padding: 11px 4px; font-size: 13.5px; }
+  .pages button { min-width: 42px; height: 42px; }
+  .check { padding: 11px 0; font-size: 14px; }
+  .check input { width: 20px; height: 20px; }
+  .link { display: inline-block; padding: 10px 0; }
+  .ask { padding: 5px 5px 5px 16px; }
+  .ask button { width: 42px; height: 42px; }
+  .quick button { min-height: 84px; font-size: 13.5px; }
+  .msg, .msg-item { font-size: 13.5px; }
+  .msg-item { padding: 11px 8px; }
+  .chat { max-height: 46vh; }
+  .cc { padding: 16px; }
+  .cc-row { padding: 9px 0; font-size: 13px; }
+  .field select, .field input[type="number"] { padding: 11px 10px; }
+  .field input[type="range"] { height: 32px; }
+  .field label { font-size: 12.5px; }
+  .kpi-meter, .hint, .bar-x, .bars-axis { font-size: 11.5px; }
+  .sheet-close { width: 42px; padding: 0; }
+  .page-head { margin-bottom: 14px; }
+  .ov-grid, .ov-left, .ov-right, .cust-grid, .whatif, .figs, .kpis, .metrics { gap: 12px; }
+  .chart-box { height: 240px; }
 }
 @media (max-width: 700px) {
   /* tables become cards */
