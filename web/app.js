@@ -12,31 +12,36 @@ const api = async (path, opts) => {
   if (!r.ok) throw new Error(`${r.status} ${path}`);
   return r.json();
 };
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const icon = (id) => `<svg class="icon"><use href="#i-${id}"/></svg>`;
 
+// Colours are CSS variables so every component follows the light/dark theme.
 const SEG = {
-  "Persuadable": { color: "#4f8cff", key: "persuadable" },
-  "Lost Cause": { color: "#f25f5c", key: "lost_cause" },
-  "Sleeping Dog": { color: "#8b5cf6", key: "sleeping_dog" },
-  "Loyal": { color: "#22c55e", key: "loyal" },
-  "Monitor": { color: "#f5a524", key: "monitor" },
+  "Persuadable": { c: "--green", key: "persuadable", ini: "PE" },
+  "Lost Cause": { c: "--red", key: "lost_cause", ini: "LC" },
+  "Sleeping Dog": { c: "--purple", key: "sleeping_dog", ini: "SD" },
+  "Loyal": { c: "--blue", key: "loyal", ini: "LO" },
+  "Monitor": { c: "--amber", key: "monitor", ini: "MO" },
 };
-const SEG_INITIALS = { "Persuadable": "PE", "Lost Cause": "LC", "Sleeping Dog": "SD", "Loyal": "LO", "Monitor": "MO" };
 const FILTERS = [
   ["all", "All"], ["high", "High Risk"], ["persuadable", "Persuadable"],
   ["lost_cause", "Lost Cause"], ["sleeping_dog", "Sleeping Dog"], ["loyal", "Loyal"],
 ];
-const riskColor = (p) => (p >= 0.6 ? "#f25f5c" : p >= 0.3 ? "#f5a524" : p >= 0.15 ? "#4f8cff" : "#22c55e");
-const tag = (seg) => {
-  const c = SEG[seg]?.color || "#8b97b3";
-  return `<span class="tag" style="color:${c};border-color:${c}55;background:${c}1a">${esc(seg)}</span>`;
-};
+const VIEWS = ["overview", "customers", "whatif", "actions", "model", "about"];
+const riskVar = (p) => (p >= 0.6 ? "--red" : p >= 0.3 ? "--amber" : "--green");
+const tag = (seg) => `<span class="tag" style="--c:var(${SEG[seg]?.c || "--muted"})">${esc(seg)}</span>`;
+const meter = (v, cvar) => `<div class="meter"><i style="width:${Math.max(0, Math.min(1, v)) * 100}%;background:var(${cvar})"></i></div>`;
 
-Chart.defaults.color = "#8b97b3";
-Chart.defaults.font.family = "Inter, system-ui, sans-serif";
-Chart.defaults.borderColor = "#1f2b47";
-
-const state = { view: "dashboard", segment: "all", q: "", sort: "churn_probability", desc: true, page: 1, size: 8, selected: null, summary: null, detail: null, tab: "factors" };
+const state = { view: "overview", segment: "all", q: "", sort: "churn_probability", desc: true, page: 1, size: 12, selected: null, summary: null, detail: null, tab: "factors" };
 const charts = {};
+
+/* ------------------------------------------------------------------ theme */
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem("churnopt.theme", t); } catch { /* storage unavailable */ }
+  if (state.view === "model") renderModel(); // Chart.js canvases need redrawing with the new colours
+  else renderModel.stale = true;
+}
 
 /* ------------------------------------------------------------------ campaign (per-browser) */
 const store = {
@@ -59,93 +64,190 @@ function toast(msg) {
 
 /* ------------------------------------------------------------------ routing */
 function route() {
-  const v = (location.hash || "#dashboard").slice(1);
-  state.view = ["dashboard", "customers", "whatif", "actions", "model", "about"].includes(v) ? v : "dashboard";
+  let v = (location.hash || "#overview").slice(1);
+  if (v === "dashboard") v = "overview";
+  state.view = VIEWS.includes(v) ? v : "overview";
   $$(".nav a").forEach((a) => a.classList.toggle("active", a.dataset.view === state.view));
-  $$(".view").forEach((s) => s.classList.remove("active", "customers"));
-  const section = state.view === "customers" ? "dashboard" : state.view;
-  $(`#view-${section}`).classList.add("active");
-  if (state.view === "customers") {
-    $("#view-dashboard").classList.add("customers");
-    $("#heroTitle").textContent = "Customers";
-    $("#heroSub").textContent = "Every customer, scored and segmented. Click a row for the full insight.";
-    state.size = 15;
-  } else if (state.view === "dashboard") {
-    $("#heroTitle").textContent = "Churn & Retention Optimizer";
-    $("#heroSub").textContent = "Predict, understand and take action to keep your customers.";
-    state.size = 8;
-  }
-  if (section === "dashboard") loadTable();
+  $$(".view").forEach((s) => s.classList.toggle("active", s.id === `view-${state.view}`));
+  openSheet(false);
+  if (state.view === "customers") loadTable();
   if (state.view === "whatif") renderWhatIf();
   if (state.view === "actions") renderActions();
   if (state.view === "model") renderModel();
-  $("#sidebar").classList.remove("open");
-  openSheet(false);
   window.scrollTo(0, 0);
 }
-
-/* ------------------------------------------------------------------ dashboard */
-function renderSummary(s) {
-  const k = s.kpis;
-  $("#kTotal").textContent = k.total_customers.toLocaleString();
-  $("#kTotalSub").textContent = `${k.high_risk.toLocaleString()} at high risk`;
-  $("#kChurn").textContent = pct(k.predicted_churn_rate);
-  $("#kChurnSub").textContent = `historical actual: ${pct(k.actual_churn_rate)}`;
-  $("#kRisk").textContent = usd(k.revenue_at_risk);
-  $("#kRiskSub").textContent = `${pct(k.revenue_at_risk / (k.monthly_revenue * 12))} of annual revenue`;
-  $("#kSave").textContent = k.customers_to_save.toLocaleString();
-  $("#kSaveSub").textContent = `offer worth ${usd(k.campaign_value)} expected`;
-  $("#sideValue").textContent = usd(k.campaign_value);
-  $("#sideNote").textContent = `${k.customers_to_save.toLocaleString()} persuadable customers`;
-  $("#modelChip").textContent = `XGBoost + ${s.model.uplift_learner} · live`;
-  $("#donutTotal").textContent = k.total_customers.toLocaleString();
-
-  // churn by tenure
-  const t = s.churn_by_tenure;
-  const ctx = $("#tenureChart").getContext("2d");
-  const grad = (c) => { const g = ctx.createLinearGradient(0, 0, 0, 210); g.addColorStop(0, c + "55"); g.addColorStop(1, c + "00"); return g; };
-  charts.tenure = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: t.labels.map((l) => `${l} mo`),
-      datasets: [
-        { label: "Actual churn", data: t.actual, borderColor: "#f25f5c", backgroundColor: grad("#f25f5c"), fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: "#f25f5c" },
-        { label: "Predicted churn", data: t.predicted, borderColor: "#4f8cff", backgroundColor: grad("#4f8cff"), fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: "#4f8cff" },
-      ],
-    },
-    options: {
-      maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${pct(c.parsed.y)}` } } },
-      scales: { y: { beginAtZero: true, ticks: { callback: (v) => `${Math.round(v * 100)}%` }, grid: { color: "#1a2440" } },
-        x: { grid: { display: false }, title: { display: true, text: "Tenure (months)" } } },
-    },
-  });
-
-  // segments donut
-  charts.seg = new Chart($("#segChart"), {
-    type: "doughnut",
-    data: { labels: s.segments.map((x) => x.name), datasets: [{ data: s.segments.map((x) => x.count), backgroundColor: s.segments.map((x) => SEG[x.name].color), borderColor: "#111a30", borderWidth: 3, hoverOffset: 6 }] },
-    options: { cutout: "70%", maintainAspectRatio: false, plugins: { legend: { display: false },
-      tooltip: { callbacks: { label: (c) => ` ${c.label}: ${c.parsed.toLocaleString()}` } } },
-      onClick: (_, els) => { if (els.length) setFilter(SEG[s.segments[els[0].index].name].key); } },
-  });
-  $("#segList").innerHTML = s.segments.map((x) => `
-    <div class="seg-row" data-key="${SEG[x.name].key}" title="${esc(x.description)}">
-      <span class="sw" style="background:${SEG[x.name].color}"></span>${esc(x.name)}<span class="pct">${pct(x.share, 0)}</span>
-    </div>`).join("");
-  $$("#segList .seg-row").forEach((r) => r.addEventListener("click", () => setFilter(r.dataset.key)));
-
-  // factors
-  const fc = ["#f25f5c", "#f97b4f", "#f5c542", "#4f8cff", "#8b5cf6"];
-  const max = Math.max(...s.top_factors.map((f) => f.share));
-  $("#factorBars").innerHTML = s.top_factors.map((f, i) => `
-    <div class="bar-row"><span>${esc(f.name)}</span>
-      <div class="bar-track"><div class="bar-fill" style="width:${(f.share / max) * 100}%;background:${fc[i]}"></div></div>
-      <span class="num">${pct(f.share, 0)}</span></div>`).join("");
-
-  $("#segExplain").innerHTML = s.segments.map((x) => `<li><strong style="color:${SEG[x.name].color}">${esc(x.name)}</strong> (${pct(x.share, 0)}): ${esc(x.description)}</li>`).join("");
+function go(view) {
+  if (location.hash === `#${view}`) route(); else location.hash = `#${view}`;
 }
 
+/* ------------------------------------------------------------------ SVG tick gauge */
+function tickGauge(el, parts, { ticks = 46, sweep = 264 } = {}) {
+  const cx = 100, cy = 100, r0 = 70, len = 24, w = 5.2;
+  let html = "", acc = 0, idx = 0;
+  const bounds = parts.map((p) => (acc += p.share));
+  for (let i = 0; i < ticks; i++) {
+    const f = (i + 0.5) / ticks;
+    while (idx < bounds.length - 1 && f > bounds[idx] / acc) idx++;
+    const ang = -sweep / 2 + sweep * (i / (ticks - 1));
+    html += `<rect data-p="${idx}" x="${cx - w / 2}" y="${cy - r0 - len}" width="${w}" height="${len}" rx="${w / 2}" transform="rotate(${ang.toFixed(2)} ${cx} ${cy})" style="fill:var(${parts[idx].c})"/>`;
+  }
+  el.innerHTML = `<svg viewBox="0 0 200 172" role="img">${html}</svg>`;
+}
+function highlightGauge(el, i) {
+  $$("rect", el).forEach((r) => { r.style.opacity = i == null || +r.dataset.p === i ? 1 : 0.22; });
+}
+
+/* ------------------------------------------------------------------ overview */
+function renderOverview(s) {
+  const k = s.kpis;
+  $("#modelChip").title = `XGBoost + ${s.model.uplift_learner}, models loaded`;
+
+  // --- churn by tenure: CSS bars (actual) with a marker line for the model's prediction
+  const t = s.churn_by_tenure;
+  const top = Math.ceil(Math.max(...t.actual, ...t.predicted) * 10) / 10;
+  const peak = t.actual.indexOf(Math.max(...t.actual));
+  const steps = Math.round(top * 10);
+  const axis = Array.from({ length: steps + 1 }, (_, i) => i / 10);
+  $("#tenureBars").innerHTML = `
+    <div class="bars-axis" style="margin-bottom:24px">${axis.map((v) => `<span style="bottom:${(v / top) * 100}%">${Math.round(v * 100)}%</span>`).join("")}</div>
+    <div class="bars-plot">
+      ${axis.map((v) => `<div class="gridline" style="bottom:calc(24px + (100% - 24px) * ${v / top})"></div>`).join("")}
+      ${t.labels.map((l, i) => `
+        <div class="bar-col ${i === peak ? "peak" : ""}">
+          <div class="bar-track"></div>
+          <div class="bar-fill" data-h="${(t.actual[i] / top) * 100}" style="height:0%">${Math.round(t.actual[i] * 100)}%</div>
+          <div class="bar-pred" data-b="${(t.predicted[i] / top) * 100}" style="bottom:0%"></div>
+          <div class="bar-tip" data-b="${(Math.max(t.actual[i], t.predicted[i]) / top) * 100}" style="bottom:0%">Actual ${pct(t.actual[i], 0)} · Model ${pct(t.predicted[i], 0)}</div>
+          <div class="bar-x">${esc(l)}<span> mo</span></div>
+        </div>`).join("")}
+    </div>`;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    $$("#tenureBars .bar-fill").forEach((b) => { b.style.height = `${b.dataset.h}%`; });
+    $$("#tenureBars [data-b]").forEach((b) => { b.style.bottom = `${b.dataset.b}%`; });
+  }));
+
+  // --- KPI cards with block meters (every share is a real proportion)
+  const annual = k.monthly_revenue * 12;
+  const kpis = [
+    ["users", "Total Customers", k.total_customers.toLocaleString(), `${k.high_risk.toLocaleString()} high risk`, "warn", "High-risk share", k.high_risk / k.total_customers],
+    ["pie", "Predicted Churn", pct(k.predicted_churn_rate), `actual ${pct(k.actual_churn_rate)}`, "", "Of all customers", k.predicted_churn_rate],
+    ["dollar", "Revenue at Risk", usd(k.revenue_at_risk), "next 12 mo", "warn", "Of annual revenue", k.revenue_at_risk / annual],
+    ["shield", "Customers to Save", k.customers_to_save.toLocaleString(), `+${usd(k.campaign_value)}`, "", "Worth an offer", k.customers_to_save / k.total_customers],
+  ];
+  const N = 14;
+  $("#kpis").innerHTML = kpis.map(([ic, label, value, chip, tone, mlabel, share], i) => `
+    <div class="card kpi reveal" style="--i:${i + 2}">
+      <div class="kpi-label">${icon(ic)}${label}</div>
+      <div class="kpi-value"><b>${value}</b><span class="chip ${tone}">${chip}</span></div>
+      <div class="kpi-meter"><span>${mlabel}</span><span>${pct(share, 0)}</span></div>
+      <div class="blocks" role="img" aria-label="${mlabel}: ${pct(share, 0)}">${Array.from({ length: N }, (_, j) => {
+        const on = j < Math.round(share * N);
+        return `<i class="${on ? "on" : ""}" style="${on ? `opacity:${1 - (j / N) * 0.6}` : ""}"></i>`;
+      }).join("")}</div>
+    </div>`).join("");
+
+  // --- segments: tick gauge + legend
+  const segs = s.segments.map((x) => ({ ...x, c: SEG[x.name].c }));
+  const gauge = $("#segGauge");
+  tickGauge(gauge, segs);
+  const show = (i) => {
+    const x = segs[i ?? 0];
+    $("#segPct").textContent = pct(x.share, 0);
+    $("#segName").textContent = x.name;
+    highlightGauge(gauge, i);
+    $$("#segList .seg-row").forEach((r, j) => r.classList.toggle("on", j === i));
+  };
+  $("#segList").innerHTML = segs.map((x, i) => `
+    <button class="seg-row" data-i="${i}" title="${esc(x.description)}"><i style="background:var(${x.c})"></i>${esc(x.name)}
+      <em>${x.count.toLocaleString()} · ${pct(x.share, 0)}</em></button>`).join("");
+  $$("#segList .seg-row").forEach((r) => {
+    r.addEventListener("mouseenter", () => show(+r.dataset.i));
+    r.addEventListener("focus", () => show(+r.dataset.i));
+    r.addEventListener("click", () => setFilter(SEG[segs[+r.dataset.i].name].key));
+  });
+  $("#segList").addEventListener("mouseleave", () => show(null));
+  show(null);
+
+  $("#segExplain").innerHTML = s.segments.map((x) => `<li><strong style="color:var(${SEG[x.name].c})">${esc(x.name)}</strong> (${pct(x.share, 0)}): ${esc(x.description)}</li>`).join("");
+}
+
+async function renderCandidates() {
+  const data = await api("/api/customers?segment=persuadable&sort=offer_expected_value_usd&desc=true&size=3");
+  $("#custCards").innerHTML = data.rows.map((r) => `
+    <button class="cc" data-id="${esc(r.customerID)}">
+      <div class="cc-head"><span class="initials">${SEG[r.segment].ini}</span>
+        <div><span class="mono">${esc(r.customerID)}</span><small>${esc(r.Contract)} · ${r.tenure} mo</small></div></div>
+      <div class="cc-row"><span>Churn risk</span><b style="color:var(${riskVar(r.churn_probability)})">${Math.round(r.churn_probability * 100)}%</b></div>
+      <div class="cc-row"><span>Segment</span>${tag(r.segment)}</div>
+      <div class="cc-row"><span>Offer value</span><b>+${usd(r.offer_expected_value_usd)}</b></div>
+    </button>`).join("");
+  $$("#custCards .cc").forEach((b) => b.addEventListener("click", () => openCustomer(b.dataset.id)));
+}
+
+/* ------------------------------------------------------------------ insights assistant (rule-based lookups) */
+function addMsg(who, html) {
+  const chat = $("#chat");
+  chat.insertAdjacentHTML("beforeend", `<div class="msg ${who}"><div class="msg-who">${who === "me" ? "You" : "Insights"}</div>${html}</div>`);
+  chat.scrollTop = chat.scrollHeight;
+  $$(".msg-item[data-id]", chat.lastElementChild).forEach((b) => b.addEventListener("click", () => openCustomer(b.dataset.id)));
+  $$("[data-filter]", chat.lastElementChild).forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); setFilter(b.dataset.filter); }));
+}
+const custList = (rows, right) => `<div class="msg-list">${rows.map((r) => `
+  <button class="msg-item" data-id="${esc(r.customerID)}"><span><span class="mono">${esc(r.customerID)}</span>
+    <small>${Math.round(r.churn_probability * 100)}% churn · ${esc(r.Contract)}</small></span><b>${right(r)}</b></button>`).join("")}</div>`;
+
+const ANSWERS = {
+  async offer() {
+    const k = state.summary.kpis;
+    const d = await api("/api/customers?segment=persuadable&sort=offer_expected_value_usd&size=3");
+    return `${k.customers_to_save.toLocaleString()} customers are persuadable. Sending them the 20% offer is expected to return ${usd(k.campaign_value)}. Best candidates:
+      ${custList(d.rows, (r) => `+${usd(r.offer_expected_value_usd)}`)}<a href="#" data-filter="persuadable">See all persuadable →</a>`;
+  },
+  async lost() {
+    const n = state.summary.segments.find((x) => x.name === "Lost Cause").count;
+    const d = await api("/api/customers?segment=lost_cause&size=3");
+    return `${n.toLocaleString()} customers are high risk, but a discount is not expected to keep them. Fix the service issue instead of spending on offers.
+      ${custList(d.rows, (r) => `${Math.round(r.churn_probability * 100)}%`)}<a href="#" data-filter="lost_cause">See all lost causes →</a>`;
+  },
+  async sleeping() {
+    const n = state.summary.segments.find((x) => x.name === "Sleeping Dog").count;
+    const d = await api("/api/customers?segment=sleeping_dog&size=3");
+    return `${n.toLocaleString()} loyal customers are likely to react badly to an offer. Leave them alone.
+      ${custList(d.rows, (r) => usd(r.offer_expected_value_usd))}<a href="#" data-filter="sleeping_dog">See all sleeping dogs →</a>`;
+  },
+  async drivers() {
+    return `The biggest churn drivers, by share of the model's total SHAP impact:
+      <div class="msg-list">${state.summary.top_factors.map((f) => `<div class="msg-item"><span>${esc(f.name)}</span><b>${pct(f.share, 0)}</b></div>`).join("")}</div>`;
+  },
+  async revenue() {
+    const k = state.summary.kpis, u = state.summary.model.uplift_vs_risk;
+    return `${usd(k.revenue_at_risk)} of revenue is at risk over the next 12 months, ${pct(k.revenue_at_risk / (k.monthly_revenue * 12), 0)} of annual revenue, with ${k.high_risk.toLocaleString()} customers at high risk.
+      <br><br>On the held-out test, uplift targeting earned ${(u.uplift / u.risk).toFixed(1)}x what risk targeting did with the same budget (${usd(u.uplift)} vs ${usd(u.risk)}).`;
+  },
+};
+const LABELS = { offer: "Who should get the offer?", lost: "Identify lost causes", drivers: "Top churn drivers", revenue: "Revenue at risk" };
+const KEYWORDS = [
+  [/offer|persuad|discount|save|target/i, "offer"], [/lost|cause/i, "lost"], [/sleep|dog|backfire/i, "sleeping"],
+  [/driver|factor|why|reason|shap/i, "drivers"], [/revenue|money|risk|\$/i, "revenue"],
+];
+async function ask(key, text) {
+  addMsg("me", esc(text || LABELS[key]));
+  try {
+    if (!key) {
+      const hit = KEYWORDS.find(([re]) => re.test(text));
+      if (hit) key = hit[1];
+    }
+    if (key) return addMsg("bot", await ANSWERS[key]());
+    const d = await api(`/api/customers?q=${encodeURIComponent(text)}&size=3`);
+    addMsg("bot", d.total
+      ? `${d.total.toLocaleString()} matching customer${d.total > 1 ? "s" : ""}. Highest risk first:${custList(d.rows, (r) => `${Math.round(r.churn_probability * 100)}%`)}`
+      : `No customers match "${esc(text)}". Try a customer ID such as 7590-VHVEG, or a word like "fiber" or "two year".`);
+  } catch (err) {
+    addMsg("bot", `Could not load that (${esc(err.message)}).`);
+  }
+}
+
+/* ------------------------------------------------------------------ customers table */
 function renderFilters() {
   $("#filters").innerHTML = FILTERS.map(([k, l]) => `<button class="pill ${state.segment === k ? "active" : ""}" data-k="${k}">${l}</button>`).join("");
   $$("#filters .pill").forEach((b) => b.addEventListener("click", () => setFilter(b.dataset.k)));
@@ -155,15 +257,18 @@ function setFilter(k) {
   state.page = 1;
   state.selected = null; // show the top customer of the new list in the insight panel
   renderFilters();
-  loadTable();
-  $(".bottom").scrollIntoView({ behavior: "smooth", block: "start" });
+  go("customers");
+}
+function openCustomer(id) {
+  state.pendingOpen = id;
+  go("customers");
 }
 
 async function loadTable() {
   const p = new URLSearchParams({ segment: state.segment, q: state.q, sort: state.sort, desc: state.desc, page: state.page, size: state.size });
   const data = await api(`/api/customers?${p}`);
   $("#exportBtn").href = `/api/customers/export.csv?${new URLSearchParams({ segment: state.segment, q: state.q })}`;
-  $("#tableHint").textContent = state.segment === "all" ? "" : FILTERS.find((f) => f[0] === state.segment)?.[1] || "";
+  $("#tableHint").textContent = `${FILTERS.find((f) => f[0] === state.segment)?.[1] || "All"} · ${data.total.toLocaleString()} customers`;
   $$("th[data-sort]").forEach((th) => {
     th.querySelector(".arrow")?.remove();
     if (th.dataset.sort === state.sort) th.insertAdjacentHTML("beforeend", `<span class="arrow">${state.desc ? "↓" : "↑"}</span>`);
@@ -171,23 +276,22 @@ async function loadTable() {
   $("#rows").innerHTML = data.rows.length ? data.rows.map((r) => `
     <tr data-id="${esc(r.customerID)}" class="${r.customerID === state.selected ? "selected" : ""}">
       <td class="c-id"><div class="mono">${esc(r.customerID)}</div><div class="hint">${esc(r.Contract)} · ${r.tenure} mo · $${Math.round(r.MonthlyCharges)}/mo</div></td>
-      <td class="c-prob"><div class="prob"><b style="color:${riskColor(r.churn_probability)}">${Math.round(r.churn_probability * 100)}%</b>
-        <div class="bar-track"><div class="bar-fill" style="width:${r.churn_probability * 100}%;background:${riskColor(r.churn_probability)}"></div></div></div></td>
+      <td class="c-prob"><div class="prob"><b style="color:var(${riskVar(r.churn_probability)})">${Math.round(r.churn_probability * 100)}%</b>${meter(r.churn_probability, riskVar(r.churn_probability))}</div></td>
       <td class="c-seg">${tag(r.segment)}</td>
-      <td class="factors-cell c-fac" title="${esc(r.main_factors)}">${esc(r.main_factors)}</td>
+      <td class="c-fac" title="${esc(r.main_factors)}">${esc(r.main_factors)}</td>
       <td class="c-act">${esc(r.primary_action)}</td>
-      <td class="c-btn"><button class="btn primary sm" data-view-id="${esc(r.customerID)}">View</button></td>
+      <td class="c-btn"><button class="btn primary sm">View</button></td>
     </tr>`).join("") : `<tr><td colspan="6" class="empty">No customers match.</td></tr>`;
   $$("#rows tr[data-id]").forEach((tr) => tr.addEventListener("click", () => selectCustomer(tr.dataset.id, true)));
 
   const pages = Math.max(1, Math.ceil(data.total / state.size));
   const from = data.total ? (state.page - 1) * state.size + 1 : 0;
-  $("#pageInfo").textContent = `Showing ${from}–${Math.min(state.page * state.size, data.total)} of ${data.total.toLocaleString()} customers`;
+  $("#pageInfo").textContent = `Showing ${from}–${Math.min(state.page * state.size, data.total)} of ${data.total.toLocaleString()}`;
   const nums = new Set([1, pages, state.page - 1, state.page, state.page + 1].filter((n) => n >= 1 && n <= pages));
   let html = `<button ${state.page === 1 ? "disabled" : ""} data-p="${state.page - 1}" aria-label="Previous page">‹</button>`;
   let prev = 0;
   [...nums].sort((a, b) => a - b).forEach((n) => {
-    if (n - prev > 1) html += `<span style="color:var(--dim)">…</span>`;
+    if (n - prev > 1) html += `<span>…</span>`;
     html += `<button class="${n === state.page ? "active" : ""}" data-p="${n}">${n}</button>`;
     prev = n;
   });
@@ -195,7 +299,11 @@ async function loadTable() {
   $("#pages").innerHTML = html;
   $$("#pages button[data-p]").forEach((b) => b.addEventListener("click", () => { state.page = +b.dataset.p; loadTable(); }));
 
-  if (!state.selected && data.rows.length) selectCustomer(data.rows[0].customerID);
+  if (state.pendingOpen) {
+    const id = state.pendingOpen;
+    state.pendingOpen = null;
+    selectCustomer(id, true);
+  } else if (!state.selected && data.rows.length) selectCustomer(data.rows[0].customerID);
 }
 
 /* ------------------------------------------------------------------ insight panel */
@@ -212,26 +320,18 @@ async function selectCustomer(id, fromTap = false) {
   renderInsight();
   if (!fromTap) return;
   if (isPhone()) openSheet(true);
-  else if (window.innerWidth < 1180) $("#insight").scrollIntoView({ behavior: "smooth" });
-}
-
-function spark(values, color) {
-  return `<span class="spark">${values.map((v) => `<i style="height:${Math.max(4, v * 22)}px;background:${color}"></i>`).join("")}</span>`;
+  else if (window.innerWidth < 1100) $("#insight").scrollIntoView({ behavior: "smooth" });
 }
 
 function renderInsight() {
   const c = state.detail;
   if (!c) return;
-  const color = riskColor(c.churn_probability);
+  const rv = riskVar(c.churn_probability);
   const inCampaign = !!store.get()[c.customerID];
   const maxImpact = Math.max(0.01, ...c.factors.map((f) => f.impact));
-  const fc = ["#f25f5c", "#f97b4f", "#f5c542", "#4f8cff"];
   const tabs = {
-    factors: c.factors.length ? c.factors.map((f, i) => `
-      <div class="bar-row" style="grid-template-columns:150px 1fr 40px;margin-bottom:10px">
-        <span style="font-size:12.5px">${esc(f.label)}</span>
-        <div class="bar-track"><div class="bar-fill" style="width:${(f.impact / maxImpact) * 100}%;background:${fc[i % 4]}"></div></div>
-        <span class="num" style="font-size:12.5px">${f.impact.toFixed(2)}</span></div>`).join("") + `<div class="hint">SHAP impact on churn log-odds</div>`
+    factors: c.factors.length ? c.factors.map((f) => `
+      <div class="frow"><span>${esc(f.label)}</span>${meter(f.impact / maxImpact, rv)}<span class="num">${f.impact.toFixed(2)}</span></div>`).join("") + `<div class="hint">SHAP impact on churn log-odds</div>`
       : `<div class="hint">No factors pushing this customer toward churn.</div>`,
     profile: `<div class="kv">
       <span>Contract</span><b>${esc(c.Contract)}</b><span>Tenure</span><b>${c.tenure} month${c.tenure === 1 ? "" : "s"}</b>
@@ -240,27 +340,27 @@ function renderInsight() {
       <span>Senior / Partner</span><b>${esc(c.SeniorCitizen)} / ${esc(c.Partner)}</b><span>Paperless</span><b>${esc(c.PaperlessBilling)}</b></div>`,
     offer: `<div class="kv">
       <span>Churn cut by offer</span><b>${(c.offer_uplift * 100).toFixed(1)} pp</b>
-      <span>Expected value</span><b style="color:${c.offer_expected_value_usd > 20 ? "var(--green)" : "var(--amber)"}">${usd(c.offer_expected_value_usd)}</b>
+      <span>Expected value</span><b style="color:var(${c.offer_expected_value_usd > 20 ? "--green-ink" : "--amber"})">${usd(c.offer_expected_value_usd)}</b>
       <span>Decision</span><b>${c.recommendation === "send_offer" ? "Send offer" : "Don't send"}</b></div>
       <div class="reason">${esc(c.segment_description)}</div><div class="reason">${esc(c.recommendation_reason)}</div>`,
   };
   $("#insight").innerHTML = `
     <div class="sheet-handle"></div>
     <div class="card-head"><h3>Customer Insight</h3><div style="display:flex;gap:8px"><a class="btn sm" href="#whatif" id="toWhatIf">Simulate</a>
-      <button class="btn sm sheet-close" id="closeSheet" aria-label="Close">✕</button></div></div>
-    <div class="cust-head">
-      <div class="avatar" style="color:${SEG[c.segment].color}">${SEG_INITIALS[c.segment]}</div>
+      <button class="btn sm sheet-close" id="closeSheet" aria-label="Close">${icon("x")}</button></div></div>
+    <div class="cust-head" style="--c:var(${SEG[c.segment].c})">
+      <span class="initials">${SEG[c.segment].ini}</span>
       <div><div class="id mono">${esc(c.customerID)}</div><div class="meta">${esc(c.gender)} · ${c.tenure} mo · ${esc(c.Contract)}</div></div>
       ${tag(c.segment)}
     </div>
     <div class="mini">
-      <div><div class="label">Churn Probability</div><div class="v"><span style="color:${color}">${Math.round(c.churn_probability * 100)}%</span>${spark([0.25, 0.45, 0.65, c.churn_probability].map((v) => Math.min(v, c.churn_probability)), color)}</div></div>
-      <div><div class="label">Revenue at Risk (12 mo)</div><div class="v"><span>${usd(c.revenue_at_risk)}</span>${spark([0.3, 0.5, 0.7, 1], "#22c55e")}</div></div>
+      <div><div class="label">Churn probability</div><div class="v" style="color:var(${rv})">${Math.round(c.churn_probability * 100)}%</div></div>
+      <div><div class="label">Revenue at risk, 12 mo</div><div class="v">${usd(c.revenue_at_risk)}</div></div>
     </div>
-    <div class="tabs">${[["factors", "Key Factors"], ["profile", "Profile"], ["offer", "Offer"]].map(([k, l]) => `<button class="${state.tab === k ? "active" : ""}" data-tab="${k}">${l}</button>`).join("")}</div>
+    <div class="tabs">${[["factors", "Key factors"], ["profile", "Profile"], ["offer", "Offer"]].map(([k, l]) => `<button class="${state.tab === k ? "active" : ""}" data-tab="${k}">${l}</button>`).join("")}</div>
     <div class="tab-body">${tabs[state.tab]}</div>
     <div class="actions">
-      <div class="actions-head"><h4><svg class="icon" viewBox="0 0 24 24"><path d="M12 3l1.9 5.8H20l-4.9 3.6 1.9 5.8L12 14.6 7 18.2l1.9-5.8L4 8.8h6.1z"/></svg>Recommended Actions</h4>
+      <div class="actions-head"><h4>${icon("spark")}Recommended actions</h4>
         <button class="btn primary sm" id="applyBtn">${inCampaign ? "Update plan" : "Add to plan"}</button></div>
       ${c.actions.map((a, i) => `<label class="check"><input type="checkbox" value="${esc(a)}" ${i < 2 || inCampaign ? "checked" : ""}>${esc(a)}</label>`).join("")}
     </div>`;
@@ -307,7 +407,7 @@ function optionsFor(type) {
   return type;
 }
 function renderWhatIf() {
-  if (state.detail && renderWhatIf.loadedFrom !== state.detail.customerID && location.hash === "#whatif" && renderWhatIf.fromInsight) {
+  if (state.detail && renderWhatIf.loadedFrom !== state.detail.customerID && renderWhatIf.fromInsight) {
     FIELDS.forEach(([k]) => { if (k in state.detail) whatIf[k] = state.detail[k]; });
     renderWhatIf.loadedFrom = state.detail.customerID;
   }
@@ -332,32 +432,28 @@ function renderWhatIf() {
   $("#resetWhatIf").onclick = () => { whatIf = { ...DEFAULT_CUSTOMER }; renderWhatIf.loadedFrom = null; renderWhatIf(); };
   predictWhatIf();
 }
-async function predictWhatIf() {
+function predictWhatIf() {
   clearTimeout(predictWhatIf._t);
   predictWhatIf._t = setTimeout(async () => {
     const body = { ...whatIf, TotalCharges: whatIf.tenure * whatIf.MonthlyCharges };
     const r = await api("/predict", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const color = riskColor(r.churn_probability);
-    $("#whatifSticky").innerHTML = `<b style="color:${color}">${Math.round(r.churn_probability * 100)}%</b>
+    const rv = riskVar(r.churn_probability), send = r.recommendation === "send_offer";
+    const maxImpact = Math.max(0.01, ...r.top_risk_factors.map((f) => f.impact));
+    $("#whatifSticky").innerHTML = `<b style="color:var(${rv})">${Math.round(r.churn_probability * 100)}%</b>
       <span>${r.risk_level} risk</span><span class="sep"></span>
-      <span class="${r.recommendation === "send_offer" ? "ok" : "no"}">${r.recommendation === "send_offer" ? "✓ Send offer" : "✕ No offer"}</span>
-      <span class="more">Details ↓</span>`;
+      <span class="${send ? "ok" : "no"}">${send ? "✓ Send offer" : "✕ No offer"}</span><span class="more">Details ↓</span>`;
     $("#whatifResult").innerHTML = `
       <h3>Prediction</h3>
-      <div class="gauge"><canvas id="gauge"></canvas><div class="gauge-center"><b style="color:${color}">${Math.round(r.churn_probability * 100)}%</b><span class="hint">${r.risk_level.toUpperCase()} churn risk</span></div></div>
-      <div class="verdict ${r.recommendation === "send_offer" ? "good" : "bad"}"><b>${r.recommendation === "send_offer" ? "✓ Send the retention offer." : "✕ Don't send the offer."}</b> ${esc(r.recommendation_reason)}</div>
+      <div class="result-gauge"><div class="tick-gauge" id="riskGauge"></div>
+        <div class="gauge-mid"><b style="color:var(${rv})">${Math.round(r.churn_probability * 100)}%</b><span>${r.risk_level} churn risk</span></div></div>
+      <div class="verdict ${send ? "good" : "bad"}"><b>${send ? "✓ Send the retention offer." : "✕ Don't send the offer."}</b> ${esc(r.recommendation_reason)}</div>
       <div class="mini">
         <div><div class="label">Offer cuts churn by</div><div class="v">${(r.offer_uplift * 100).toFixed(1)} pp</div></div>
         <div><div class="label">Expected offer value</div><div class="v">${usd(r.offer_expected_value_usd)}</div></div>
       </div>
-      <h3 style="font-size:15px">Why? (SHAP)</h3>
-      ${r.top_risk_factors.length ? r.top_risk_factors.map((f) => `<div class="bar-row" style="grid-template-columns:150px 1fr 40px;margin-bottom:9px"><span style="font-size:12.5px">${esc(f.feature)} = ${esc(f.value)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.min(100, f.impact * 120)}%;background:#f25f5c"></div></div><span class="num" style="font-size:12.5px">+${f.impact.toFixed(2)}</span></div>`).join("") : `<div class="hint">Nothing is pushing this customer toward churn.</div>`}`;
-    charts.gauge?.destroy();
-    charts.gauge = new Chart($("#gauge"), {
-      type: "doughnut",
-      data: { datasets: [{ data: [r.churn_probability, 1 - r.churn_probability], backgroundColor: [color, "#1b2643"], borderWidth: 0 }] },
-      options: { rotation: -90, circumference: 180, cutout: "78%", maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, animation: { duration: 300 } },
-    });
+      <h4 style="margin:4px 0 12px">Why? <span class="hint">SHAP impact</span></h4>
+      ${r.top_risk_factors.length ? r.top_risk_factors.map((f) => `<div class="frow"><span>${esc(f.feature)} = ${esc(f.value)}</span>${meter(f.impact / maxImpact, rv)}<span class="num">+${f.impact.toFixed(2)}</span></div>`).join("") : `<div class="hint">Nothing is pushing this customer toward churn.</div>`}`;
+    tickGauge($("#riskGauge"), [{ share: Math.max(r.churn_probability, 0.001), c: rv }, { share: 1 - r.churn_probability, c: "--track" }]);
   }, 150);
 }
 
@@ -372,15 +468,16 @@ function renderActions() {
   const total = ids.reduce((s, id) => s + (camp[id].actions.some((a) => a.startsWith("Send")) ? camp[id].value : 0), 0);
   $("#actionsBody").innerHTML = `
     <div class="card-head"><h3>${ids.length} customer${ids.length > 1 ? "s" : ""} in plan · expected offer value ${usd(total)}</h3>
-      <div style="display:flex;gap:8px"><button class="btn" id="clearPlan">Clear</button><button class="btn primary" id="dlPlan">Download CSV</button></div></div>
+      <div style="display:flex;gap:8px"><button class="btn" id="clearPlan">Clear</button><button class="btn primary" id="dlPlan">${icon("download")}Download CSV</button></div></div>
     <div class="table-wrap"><table><thead><tr><th class="nosort">Customer ID</th><th class="nosort">Segment</th><th class="nosort">Churn</th><th class="nosort">Offer value</th><th class="nosort">Planned actions</th><th class="nosort"></th></tr></thead>
     <tbody>${ids.map((id) => { const c = camp[id]; return `<tr data-id="${esc(id)}"><td class="mono a-id">${esc(id)}</td><td class="a-seg">${tag(c.segment)}</td>
-      <td class="a-prob" style="color:${riskColor(c.prob)}">${Math.round(c.prob * 100)}% <span class="ph-label">churn</span></td><td class="a-val">${usd(c.value)} <span class="ph-label">offer value</span></td>
+      <td class="a-prob" style="color:var(${riskVar(c.prob)})">${Math.round(c.prob * 100)}% <span class="ph-label">churn</span></td><td class="a-val">${usd(c.value)} <span class="ph-label">offer value</span></td>
       <td class="a-acts" style="white-space:normal">${c.actions.map(esc).join("<br>")}</td><td class="a-rm"><button class="btn sm" data-remove="${esc(id)}">Remove</button></td></tr>`; }).join("")}</tbody></table></div>`;
   $$("[data-remove]").forEach((b) => b.addEventListener("click", (e) => {
     e.stopPropagation();
     const c = store.get(); delete c[b.dataset.remove]; store.set(c); updateCampaignBadge(); renderActions();
   }));
+  $$("#actionsBody tbody tr").forEach((tr) => tr.addEventListener("click", () => openCustomer(tr.dataset.id)));
   $("#clearPlan").onclick = () => { store.set({}); updateCampaignBadge(); renderActions(); };
   $("#dlPlan").onclick = () => {
     const lines = [["customerID", "segment", "churn_probability", "offer_expected_value_usd", "actions"]]
@@ -392,7 +489,7 @@ function renderActions() {
   };
 }
 
-/* ------------------------------------------------------------------ model view */
+/* ------------------------------------------------------------------ model view (Chart.js, redrawn on theme change) */
 const SHORT_POLICY = {
   "Offer to everyone": "Everyone",
   "Top 20% by churn risk (traditional)": "Risk, top 20%",
@@ -403,24 +500,62 @@ const SHORT_POLICY = {
 };
 function renderModel() {
   const m = state.summary?.model;
-  if (!m || renderModel.done) return;
+  if (!m) return;
+  if (renderModel.done && !renderModel.stale) return;
   renderModel.done = true;
+  renderModel.stale = false;
   const u = m.uplift_vs_risk;
   $("#metrics").innerHTML = [
     ["ROC-AUC", m.roc_auc.toFixed(3), `Logistic baseline ${m.baseline_roc_auc.toFixed(3)}`],
     ["PR-AUC", m.pr_auc.toFixed(3), `F1 ${m.f1.toFixed(3)} · recall ${pct(m.recall, 0)}`],
     ["Top-decile lift", `${m.lift.toFixed(1)}x`, "10% riskiest hold 28% of churners"],
-    ["Uplift vs risk targeting", `${(u.uplift / u.risk).toFixed(1)}x`, `${usd(u.uplift)} vs ${usd(u.risk)} at same budget`],
+    ["Uplift vs risk targeting", `${(u.uplift / u.risk).toFixed(1)}x`, `${usd(u.uplift)} vs ${usd(u.risk)}, same budget`],
   ].map(([l, v, s]) => `<div class="card metric"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
 
+  const C = { text: css("--text"), muted: css("--muted"), line: css("--line"), green: css("--green"), bright: css("--green-bright"), red: css("--red"), dim: css("--dim"), card: css("--card") };
+  Chart.defaults.color = C.muted;
+  Chart.defaults.borderColor = C.line;
+  Chart.defaults.font.family = "Outfit, system-ui, sans-serif";
+  Chart.defaults.font.size = 12;
+  ["policy", "scenario", "tenure"].forEach((k) => charts[k]?.destroy());
+  const tip = { backgroundColor: C.text, titleColor: C.card, bodyColor: C.card, padding: 10, cornerRadius: 8, displayColors: false };
+  const grid = { color: C.line, drawTicks: false }, border = { display: false };
+
   const pol = m.policies.filter((p) => p.policy !== "No offers");
-  new Chart($("#policyChart"), {
+  charts.policy = new Chart($("#policyChart"), {
     type: "bar",
     data: { labels: pol.map((p) => SHORT_POLICY[p.policy] || p.policy),
-      datasets: [{ data: pol.map((p) => p.net_value_usd), borderRadius: 6,
-        backgroundColor: pol.map((p) => (p.net_value_usd < 0 ? "#f25f5c" : p.policy.includes("uplift") || p.policy.includes("Uplift") ? "#4f8cff" : p.policy.startsWith("Oracle") ? "#2dd4bf" : "#5d6a88")) }] },
-    options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` Net value ${usd(c.parsed.x)}` } } },
-      scales: { x: { ticks: { callback: (v) => usd(v) }, grid: { color: "#1a2440" } }, y: { grid: { display: false }, ticks: { font: { size: 11 } } } } },
+      datasets: [{ data: pol.map((p) => p.net_value_usd), borderRadius: 7, borderSkipped: false, maxBarThickness: 26,
+        backgroundColor: pol.map((p) => (p.net_value_usd < 0 ? C.red : /uplift/i.test(p.policy) ? C.bright : p.policy.startsWith("Oracle") ? C.text : C.dim)) }] },
+    options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { label: (c) => `Net value ${usd(c.parsed.x)}` } } },
+      scales: { x: { ticks: { callback: (v) => usd(v) }, grid, border }, y: { grid: { display: false }, border } } },
+  });
+
+  const sc = m.scenarios, keys = Object.keys(sc);
+  const series = [["Risk, top 20%", "churn_risk_top20_net_value", C.dim], ["Risk, same budget", "churn_risk_same_budget_net_value", C.muted],
+    ["Uplift model", "uplift_policy_net_value", C.bright], ["Oracle (max)", "oracle_net_value", C.text]];
+  charts.scenario = new Chart($("#scenarioChart"), {
+    type: "bar",
+    data: { labels: keys.map((k) => k.replace("_", "-")),
+      datasets: series.map(([label, key, color]) => ({ label, data: keys.map((k) => sc[k][key] / 1000), backgroundColor: color, borderRadius: 6, borderSkipped: false, maxBarThickness: 34 })) },
+    options: { maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10, useBorderRadius: true, borderRadius: 3, padding: 14 } }, tooltip: { ...tip, callbacks: { label: (c) => `${c.dataset.label}: $${c.parsed.y.toFixed(1)}k` } } },
+      scales: { y: { ticks: { callback: (v) => `$${v}k` }, grid, border }, x: { grid: { display: false }, border } } },
+  });
+
+  const t = state.summary.churn_by_tenure;
+  const ctx = $("#tenureLine").getContext("2d");
+  const fill = ctx.createLinearGradient(0, 0, 0, 270);
+  fill.addColorStop(0, C.bright + "55");
+  fill.addColorStop(1, C.bright + "00");
+  charts.tenure = new Chart(ctx, {
+    type: "line",
+    data: { labels: t.labels.map((l) => `${l} mo`), datasets: [
+      { label: "Actual churn", data: t.actual, borderColor: C.green, backgroundColor: fill, fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: C.green, borderWidth: 2 },
+      { label: "Predicted churn", data: t.predicted, borderColor: C.text, borderDash: [5, 4], tension: 0.35, pointRadius: 0, borderWidth: 1.5 }] },
+    options: { maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+      plugins: { legend: { position: "bottom", labels: { boxWidth: 14, boxHeight: 2, padding: 14 } }, tooltip: { ...tip, callbacks: { label: (c) => `${c.dataset.label}: ${pct(c.parsed.y)}` } } },
+      scales: { y: { beginAtZero: true, ticks: { callback: (v) => `${Math.round(v * 100)}%` }, grid, border }, x: { grid: { display: false }, border } } },
   });
 }
 
@@ -428,6 +563,8 @@ function renderModel() {
 async function init() {
   updateCampaignBadge();
   renderFilters();
+  $("#themeDark").addEventListener("click", () => setTheme("dark"));
+  $("#themeLight").addEventListener("click", () => setTheme("light"));
   $$("th[data-sort]").forEach((th) => th.addEventListener("click", () => {
     if (state.sort === th.dataset.sort) state.desc = !state.desc; else { state.sort = th.dataset.sort; state.desc = true; }
     state.page = 1;
@@ -437,13 +574,20 @@ async function init() {
   $("#tableSearch").addEventListener("input", (e) => { clearTimeout(t); t = setTimeout(() => { state.q = e.target.value.trim(); state.page = 1; state.selected = null; loadTable(); }, 250); });
   $("#globalSearch").addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
-    state.q = e.target.value.trim(); state.page = 1; $("#tableSearch").value = state.q;
-    if (location.hash !== "#customers") location.hash = "#customers"; else loadTable();
+    state.q = e.target.value.trim(); state.page = 1; state.selected = null; $("#tableSearch").value = state.q;
+    go("customers");
   });
   $("#whatifSticky").addEventListener("click", () => $("#whatifResult").scrollIntoView({ behavior: "smooth" }));
-  $("#menuBtn").addEventListener("click", () => { $("#sidebar").classList.toggle("open"); $("#sheetBackdrop").classList.toggle("show", $("#sidebar").classList.contains("open")); });
-  $("#sheetBackdrop").addEventListener("click", () => { openSheet(false); $("#sidebar").classList.remove("open"); });
-  document.addEventListener("click", (e) => { if (e.target.id === "toWhatIf") renderWhatIf.fromInsight = true; });
+  $("#sheetBackdrop").addEventListener("click", () => openSheet(false));
+  document.addEventListener("click", (e) => { if (e.target.closest("#toWhatIf")) renderWhatIf.fromInsight = true; });
+  $$("#quick button").forEach((b) => b.addEventListener("click", () => ask(b.dataset.q)));
+  $("#askForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = $("#askInput").value.trim();
+    if (!text) return;
+    $("#askInput").value = "";
+    ask(null, text);
+  });
 
   try {
     state.summary = await api("/api/summary");
@@ -451,9 +595,11 @@ async function init() {
     $("#loading").innerHTML = `<div>Could not load data (${esc(err.message)}). Is the API running?</div>`;
     return;
   }
-  // Show the dashboard section before drawing, so Chart.js measures real sizes.
-  $("#view-dashboard").classList.add("active");
-  renderSummary(state.summary);
+  // Show the overview before drawing so sizes are measured correctly.
+  $("#view-overview").classList.add("active");
+  renderOverview(state.summary);
+  renderCandidates();
+  addMsg("bot", "Pick a quick action, or search a customer ID such as 7590-VHVEG.");
   window.addEventListener("hashchange", route);
   route();
   $("#loading").classList.add("hide");

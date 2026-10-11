@@ -14,24 +14,29 @@ targets offers by expected profit.
 
 > Free hosting: the first visit after a quiet period takes ~1 minute while the server wakes up.
 
-![ChurnOpt dashboard](docs/dashboard.png)
+![ChurnOpt dashboard, light theme](docs/dashboard.png)
+
+![ChurnOpt dashboard, dark theme](docs/dashboard-dark.png)
 
 ## Dashboard
 
 A custom web app (HTML/CSS/JS + Chart.js) served by the FastAPI backend, scoring all 7,043 customers:
 
-- **Dashboard**: KPIs (predicted churn rate, 12-month revenue at risk, customers worth saving), churn by
-  tenure (actual vs predicted), uplift segments, top SHAP churn drivers, and a searchable, sortable,
-  filterable customer table with CSV export
+- **Overview**: KPIs (predicted churn rate, 12-month revenue at risk, customers worth saving), churn by
+  tenure (actual vs model prediction), an uplift-segment gauge, the best offer candidates, and an
+  **Insights Assistant** with quick actions and customer search (rule-based lookups over the scored data,
+  not a language model)
+- **Customers**: a searchable, sortable, filterable table of every customer with CSV export
+- **Light and dark themes** with a toggle (follows the system setting by default; `?theme=dark` forces one)
 - **Customer insight panel**: churn probability, revenue at risk, per-customer SHAP factors, offer economics
   and recommended actions you can add to a retention plan
 - **What-If Simulator**: edit any customer profile and watch risk and the offer decision update live
 - **Retention Actions**: your campaign plan, downloadable as CSV
-- **Model Performance** and **How It Works** pages
+- **Model Performance** (theme-aware charts) and **How It Works** pages
 
 Every number on screen comes from the models. There are no invented names, dates or trends.
 
-<p align="center"><img src="docs/mobile.png" alt="ChurnOpt on a phone" width="280"><br><sub>Responsive: customer cards, bottom-sheet insights and a sticky what-if result on phones.</sub></p>
+<p align="center"><img src="docs/mobile.png" alt="ChurnOpt on a phone" width="280"><br><sub>Responsive: bottom tab bar, customer cards, bottom-sheet insights and a sticky what-if result on phones.</sub></p>
 
 **Uplift segments** used across the app:
 

@@ -3,6 +3,8 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+plt.rcParams["savefig.dpi"] = 220  # sharp on high-DPI screens
 import pandas as pd
 
 from .config import FIGURES_DIR, REPORTS_DIR, TARGET
