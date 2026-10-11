@@ -74,9 +74,10 @@ h1, h3, h4 { font-weight: 500; letter-spacing: -0.01em; margin: 0; }
   border-radius: 26px; padding: 18px 26px 30px; min-height: calc(100vh - 44px); }
 .topbar { display: flex; align-items: center; gap: 14px; padding: 6px 0 20px; }
 .brand { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--text); margin-right: 26px; }
-.brand-mark { width: 30px; height: 30px; border-radius: 10px; background: #0b2a1b; display: grid; place-items: center; }
-.brand-mark svg { width: 18px; height: 18px; stroke: #45e07a; fill: none; stroke-width: 2.2; stroke-linecap: round;
-  stroke-linejoin: round; }
+.brand-mark { width: 30px; height: 30px; display: grid; place-items: center; }
+.brand-mark svg { width: 30px; height: 30px; }
+.brand-mark rect { fill: var(--text); }
+.brand-mark circle { fill: var(--green); }
 .brand-name { font-size: 20px; font-weight: 500; letter-spacing: -0.02em; }
 
 .nav { display: flex; gap: 4px; }
