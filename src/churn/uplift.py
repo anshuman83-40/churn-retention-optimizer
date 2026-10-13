@@ -30,6 +30,7 @@ from .config import (
     FIGURES_DIR,
     OFFER_DISCOUNT,
     OFFER_MONTHS,
+    OWN_MODEL_PATH,
     PROCESSED_DIR,
     RANDOM_STATE,
     REPORTS_DIR,
@@ -38,6 +39,10 @@ from .config import (
 )
 from .data import load_dataset
 from .learners import SLearner, TLearner, XLearner
+from .ownmodel import ChurnUpliftNet
+
+LIBRARY_LEARNERS = (SLearner, TLearner, XLearner)
+OWN = ChurnUpliftNet.name
 
 # --------------------------------------------------------------------------- simulation
 SCENARIOS = {
@@ -152,7 +157,7 @@ def plot_qini(curves: dict, fname="uplift_qini.png"):
 
 def plot_policies(policies: pd.DataFrame):
     p = policies[policies["policy"] != "No offers"]
-    fig, ax = plt.subplots(figsize=(7, 3.6))
+    fig, ax = plt.subplots(figsize=(7.4, 4.3))
     colors = ["#d1495b" if v < 0 else "#3b6fb6" for v in p["net_value_usd"]]
     ax.barh(p["policy"], p["net_value_usd"], color=colors)
     ax.axvline(0, color="k", lw=0.8)
@@ -212,7 +217,7 @@ def run_scenario(df, p0, churn_pipe, scenario: str, make_plots: bool) -> dict:
     Xte, tte, yte = test[FEATURES], test["treatment"].to_numpy(), test["churn"].to_numpy()
 
     results, curves, learners = {}, {}, {}
-    for cls in (SLearner, TLearner, XLearner):
+    for cls in LIBRARY_LEARNERS + (ChurnUpliftNet,):
         m = cls().fit(Xtr, ttr, ytr)
         u = m.predict_uplift(Xte)
         results[m.name] = {
@@ -233,14 +238,24 @@ def run_scenario(df, p0, churn_pipe, scenario: str, make_plots: bool) -> dict:
     frac, q = next(iter(curves.values()))
     curves["Random"] = (frac, frac * q[-1])
 
-    best_name = max(learners, key=lambda k: results[k]["qini_coefficient"])
+    # The library pipeline serves the best library learner; the from-scratch model is reported next to it.
+    best_name = max((c.name for c in LIBRARY_LEARNERS), key=lambda k: results[k]["qini_coefficient"])
     best = learners[best_name]
-    print(f"Selected uplift learner: {best_name}")
+    print(f"Selected library uplift learner: {best_name}")
 
-    _, p1_hat = best.predict_outcomes(Xte)
-    u_hat = best.predict_uplift(Xte)
-    ev = offer_economics(Xte, p1_hat, u_hat)
-    policies = evaluate_policies(test, {"churn_risk": churn_risk, "uplift": u_hat, "expected_value": ev})
+    def policies_for(model):
+        _, p1_hat = model.predict_outcomes(Xte)
+        u_hat = model.predict_uplift(Xte)
+        ev = offer_economics(Xte, p1_hat, u_hat)
+        return u_hat, evaluate_policies(test, {"churn_risk": churn_risk, "uplift": u_hat, "expected_value": ev})
+
+    u_hat, policies = policies_for(best)
+    _, own_pol = policies_for(learners[OWN])
+    own_rows = own_pol[own_pol["policy"].isin(["Top 20% by predicted uplift",
+                                               "Uplift model: offer if expected value > 0"])].copy()
+    own_rows["policy"] = ["Own model: top 20% by predicted uplift", "Own model: offer if expected value > 0"]
+    oracle = policies["policy"].str.startswith("Oracle")
+    policies = pd.concat([policies[~oracle], own_rows, policies[oracle]], ignore_index=True)
     print(policies.to_string(index=False))
 
     if make_plots:
@@ -261,6 +276,9 @@ def run_scenario(df, p0, churn_pipe, scenario: str, make_plots: bool) -> dict:
             "churn_risk_same_budget_net_value": float(pol["Churn risk, same # of offers as uplift policy"]),
             "offer_everyone_net_value": float(pol["Offer to everyone"]),
             "oracle_net_value": float(pol["Oracle (true effect, upper bound)"]),
+            "uplift_top20_net_value": float(pol["Top 20% by predicted uplift"]),
+            "own_policy_net_value": float(pol["Own model: offer if expected value > 0"]),
+            "own_top20_net_value": float(pol["Own model: top 20% by predicted uplift"]),
         },
         "_learner_cls": type(best),
         "_exp": exp,
@@ -287,6 +305,13 @@ def main():
     final = serving.pop("_learner_cls")().fit(exp[FEATURES], exp["treatment"].to_numpy(), exp["churn"].to_numpy())
     joblib.dump({"learner": final, "name": serving["selected_learner"], "scenario": SERVING_SCENARIO},
                 UPLIFT_MODEL_PATH)
+
+    # The from-scratch model, trained on the same experiment data, for serving.
+    from .train import best_f1_threshold
+    own = ChurnUpliftNet().fit(exp[FEATURES], exp["treatment"].to_numpy(), exp["churn"].to_numpy())
+    own_p0, _ = own.predict_outcomes(df[FEATURES])
+    joblib.dump({"model": own, "name": OWN, "threshold": best_f1_threshold(df[TARGET], own_p0),
+                 "scenario": SERVING_SCENARIO}, OWN_MODEL_PATH)
     for sc in summary.values():
         sc.pop("_exp", None)
         sc.pop("_learner_cls", None)

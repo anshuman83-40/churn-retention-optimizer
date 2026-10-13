@@ -38,6 +38,7 @@ from .config import (
 )
 from .data import load_dataset
 from .features import aggregate_by_feature, build_preprocessor, original_feature_groups
+from .ownmodel import ChurnUpliftNet
 
 CV = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
 
@@ -165,7 +166,16 @@ def main():
         "xgboost": evaluate(y_test, xgb_test, xgb_thr),
     }
     results["xgboost"]["cv_roc_auc"] = round(cv_auc, 4)
+    # The library pipeline (served with SHAP) is chosen among the two library models.
     best_name = max(results, key=lambda k: results[k]["roc_auc"])
+
+    print("Own model: ChurnUpliftNet (NumPy, from scratch)")
+    # Threshold from a held-out slice of the training data, then refit on all of it.
+    X_fit, X_hold, y_fit, y_hold = train_test_split(X_train, y_train, test_size=0.2, stratify=y_train,
+                                                    random_state=RANDOM_STATE)
+    own_thr = best_f1_threshold(y_hold, ChurnUpliftNet().fit(X_fit, y=y_fit).predict_proba(X_hold)[:, 1])
+    own_test = ChurnUpliftNet().fit(X_train, y=y_train).predict_proba(X_test)[:, 1]
+    results["churn_upliftnet"] = evaluate(y_test, own_test, own_thr)
     best_model, best_thr = (xgb, xgb_thr) if best_name == "xgboost" else (logreg, lr_thr)
     print(json.dumps(results, indent=2))
     print(f"Selected model: {best_name}")
@@ -174,8 +184,9 @@ def main():
     best_test = xgb_test if best_name == "xgboost" else lr_test
     top_decile = best_test >= np.quantile(best_test, 0.9)
     lift = float(y_test[top_decile].mean() / y_test.mean())
+    own_lift = float(y_test[own_test >= np.quantile(own_test, 0.9)].mean() / y_test.mean())
 
-    plot_curves(y_test, {"Logistic Regression": lr_test, "XGBoost": xgb_test})
+    plot_curves(y_test, {"Logistic Regression": lr_test, "XGBoost": xgb_test, "ChurnUpliftNet (own)": own_test})
     importance = shap_report(xgb, X_test)
 
     joblib.dump(
@@ -189,6 +200,7 @@ def main():
         "selected_model": best_name,
         "metrics": results,
         "top_decile_lift": round(lift, 2),
+        "own_top_decile_lift": round(own_lift, 2),
         "xgb_params": params,
         "feature_importance": importance,
         "n_train": int(len(X_train)),

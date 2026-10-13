@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .config import CLV_MONTHS, RAW_DATA, REPORTS_DIR
-from .predict import score
+from .predict import DEFAULT_MODEL, MODELS, model_names, score
 
 SEGMENTS = {
     "Persuadable": "Will likely stay if they get the offer: target them.",
@@ -78,14 +78,18 @@ def actions_for(row: dict, seg: str) -> list[str]:
     return acts or ["Monitor monthly"]
 
 
-@lru_cache(maxsize=1)
-def customer_base() -> pd.DataFrame:
+@lru_cache(maxsize=len(MODELS))
+def customer_base(model: str = DEFAULT_MODEL) -> pd.DataFrame:
     raw = pd.read_csv(RAW_DATA)
     actual = (raw.pop("Churn") == "Yes").astype(int)
     raw["TotalCharges"] = pd.to_numeric(raw["TotalCharges"], errors="coerce").fillna(0.0)
     raw["SeniorCitizen"] = raw["SeniorCitizen"].map({0: "No", 1: "Yes"})
-    res = score(raw.drop(columns=["customerID"]).to_dict("records"), top_k=4)
+    res = score(raw.drop(columns=["customerID"]).to_dict("records"), top_k=4, model=model)
+    # Global importance: mean absolute per-customer contribution (occlusion for the own model, SHAP for XGBoost).
+    contribs = pd.DataFrame([r.pop("contributions") for r in res])
+    importance = contribs.abs().mean().sort_values(ascending=False).to_dict()
     df = pd.concat([raw, pd.DataFrame(res)], axis=1)
+    df.attrs["importance"] = importance
     df["actual_churn"] = actual
     df["segment"] = [segment_of(r) for r in res]
     df["revenue_at_risk"] = (df["churn_probability"] * df["MonthlyCharges"] * CLV_MONTHS).round(2)
@@ -106,8 +110,8 @@ def _reports():
     return churn, uplift
 
 
-def summary() -> dict:
-    df = customer_base()
+def summary(model: str = DEFAULT_MODEL) -> dict:
+    df = customer_base(model)
     churn_rep, uplift_rep = _reports()
     n = len(df)
     pers = df[df["segment"] == "Persuadable"]
@@ -119,7 +123,7 @@ def summary() -> dict:
         for s, d in SEGMENTS.items()
     ]
 
-    imp = churn_rep["feature_importance"]
+    imp = df.attrs["importance"]
     merged: dict[str, float] = {}
     labels = {"Contract": "Contract type", "tenure": "Tenure", "tenure_group": "Tenure",
               "InternetService": "Internet service", "OnlineSecurity": "Online security",
@@ -134,16 +138,18 @@ def summary() -> dict:
     factors = [{"name": k, "share": round(v / total_imp, 4)} for k, v in top]
 
     bins = [-1, 6, 12, 18, 24, 36, 48, 60, 72]
-    names = ["0-6", "7-12", "13-18", "19-24", "25-36", "37-48", "49-60", "61-72"]
-    g = df.groupby(pd.cut(df["tenure"], bins=bins, labels=names), observed=True)
+    buckets = ["0-6", "7-12", "13-18", "19-24", "25-36", "37-48", "49-60", "61-72"]
+    g = df.groupby(pd.cut(df["tenure"], bins=bins, labels=buckets), observed=True)
     by_tenure = {
-        "labels": names,
+        "labels": buckets,
         "actual": [round(float(v), 4) for v in g["actual_churn"].mean()],
         "predicted": [round(float(v), 4) for v in g["churn_probability"].mean()],
     }
 
     pv = uplift_rep["scenarios"][uplift_rep["serving_scenario"]]["policy_value"]
     xgb = churn_rep["metrics"]["xgboost"]
+    own = churn_rep["metrics"]["churn_upliftnet"]
+    names = model_names()
     return {
         "kpis": {
             "total_customers": n,
@@ -158,7 +164,16 @@ def summary() -> dict:
         "segments": segments,
         "top_factors": factors,
         "churn_by_tenure": by_tenure,
+        "served": {"key": model, "name": names[model], "options": names},
         "model": {
+            "churn_models": [
+                {"name": "ChurnUpliftNet (own, NumPy)", "own": True, **own, "lift": churn_rep["own_top_decile_lift"]},
+                {"name": "XGBoost (library)", "own": False, **xgb, "lift": churn_rep["top_decile_lift"]},
+                {"name": "Logistic Regression (library)", "own": False, **churn_rep["metrics"]["logistic_regression"]},
+            ],
+            "uplift_learners": {sc: v["learners"] for sc, v in uplift_rep["scenarios"].items()},
+            "own_vs_risk": {"own_top20": pv["Own model: top 20% by predicted uplift"],
+                            "own_policy": pv["Own model: offer if expected value > 0"]},
             "roc_auc": xgb["roc_auc"], "pr_auc": xgb["pr_auc"], "f1": xgb["f1"], "recall": xgb["recall"],
             "precision": xgb["precision"], "brier": xgb["brier"], "lift": churn_rep["top_decile_lift"],
             "baseline_roc_auc": churn_rep["metrics"]["logistic_regression"]["roc_auc"],
@@ -178,8 +193,9 @@ TABLE_COLS = ["customerID", "Contract", "tenure", "MonthlyCharges", "churn_proba
 FILTERS = {"high": lambda d: d["risk_level"] == "high", **{s.lower().replace(" ", "_"): (lambda s: lambda d: d["segment"] == s)(s) for s in SEGMENTS}}
 
 
-def query(segment: str = "all", q: str = "", sort: str = "churn_probability", desc: bool = True) -> pd.DataFrame:
-    df = customer_base()
+def query(segment: str = "all", q: str = "", sort: str = "churn_probability", desc: bool = True,
+          model: str = DEFAULT_MODEL) -> pd.DataFrame:
+    df = customer_base(model)
     if segment in FILTERS:
         df = df[FILTERS[segment](df)]
     if q:
@@ -194,8 +210,8 @@ def query(segment: str = "all", q: str = "", sort: str = "churn_probability", de
     return df
 
 
-def page(segment="all", q="", sort="churn_probability", desc=True, page_no=1, size=10) -> dict:
-    df = query(segment, q, sort, desc)
+def page(segment="all", q="", sort="churn_probability", desc=True, page_no=1, size=10, model=DEFAULT_MODEL) -> dict:
+    df = query(segment, q, sort, desc, model)
     total = len(df)
     start = (max(page_no, 1) - 1) * size
     rows = df.iloc[start:start + size][TABLE_COLS]
@@ -203,8 +219,8 @@ def page(segment="all", q="", sort="churn_probability", desc=True, page_no=1, si
             "rows": json.loads(rows.to_json(orient="records"))}
 
 
-def customer(customer_id: str) -> dict | None:
-    df = customer_base()
+def customer(customer_id: str, model: str = DEFAULT_MODEL) -> dict | None:
+    df = customer_base(model)
     hit = df[df["customerID"] == customer_id]
     if hit.empty:
         return None

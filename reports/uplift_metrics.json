@@ -17,6 +17,11 @@
       "corr_with_true_uplift": 0.4398,
       "pehe": 0.1003
     },
+    "ChurnUpliftNet": {
+      "qini_coefficient": 0.0038,
+      "corr_with_true_uplift": 0.455,
+      "pehe": 0.0759
+    },
     "churn-risk ranking (non-causal)": {
       "qini_coefficient": 0.0042,
       "corr_with_true_uplift": 0.3243
@@ -66,6 +71,20 @@
       "discount_cost_usd": 19253.0
     },
     {
+      "policy": "Own model: top 20% by predicted uplift",
+      "customers_targeted": 422,
+      "churners_prevented": 55.1,
+      "net_value_usd": 24265.0,
+      "discount_cost_usd": 10601.0
+    },
+    {
+      "policy": "Own model: offer if expected value > 0",
+      "customers_targeted": 694,
+      "churners_prevented": 74.7,
+      "net_value_usd": 30742.0,
+      "discount_cost_usd": 20152.0
+    },
+    {
       "policy": "Oracle (true effect, upper bound)",
       "customers_targeted": 563,
       "churners_prevented": 86.7,
@@ -78,7 +97,10 @@
     "churn_risk_top20_net_value": 12913.0,
     "churn_risk_same_budget_net_value": 28921.0,
     "offer_everyone_net_value": -3745.0,
-    "oracle_net_value": 45383.0
+    "oracle_net_value": 45383.0,
+    "uplift_top20_net_value": 31013.0,
+    "own_policy_net_value": 30742.0,
+    "own_top20_net_value": 24265.0
   },
   "scenarios": {
     "risk_aligned": {
@@ -99,6 +121,11 @@
           "qini_coefficient": 0.0081,
           "corr_with_true_uplift": 0.6075,
           "pehe": 0.1082
+        },
+        "ChurnUpliftNet": {
+          "qini_coefficient": 0.0144,
+          "corr_with_true_uplift": 0.867,
+          "pehe": 0.0654
         },
         "churn-risk ranking (non-causal)": {
           "qini_coefficient": 0.0135,
@@ -149,6 +176,20 @@
           "discount_cost_usd": 30515.0
         },
         {
+          "policy": "Own model: top 20% by predicted uplift",
+          "customers_targeted": 422,
+          "churners_prevented": 91.9,
+          "net_value_usd": 66173.0,
+          "discount_cost_usd": 10044.0
+        },
+        {
+          "policy": "Own model: offer if expected value > 0",
+          "customers_targeted": 1189,
+          "churners_prevented": 174.1,
+          "net_value_usd": 114413.0,
+          "discount_cost_usd": 35139.0
+        },
+        {
           "policy": "Oracle (true effect, upper bound)",
           "customers_targeted": 1100,
           "churners_prevented": 176.3,
@@ -163,6 +204,8 @@
         "Top 20% by predicted uplift": 65499.0,
         "Churn risk, same # of offers as uplift policy": 116639.0,
         "Uplift model: offer if expected value > 0": 114884.0,
+        "Own model: top 20% by predicted uplift": 66173.0,
+        "Own model: offer if expected value > 0": 114413.0,
         "Oracle (true effect, upper bound)": 120140.0
       },
       "headline": {
@@ -170,7 +213,10 @@
         "churn_risk_top20_net_value": 80292.0,
         "churn_risk_same_budget_net_value": 116639.0,
         "offer_everyone_net_value": 81856.0,
-        "oracle_net_value": 120140.0
+        "oracle_net_value": 120140.0,
+        "uplift_top20_net_value": 65499.0,
+        "own_policy_net_value": 114413.0,
+        "own_top20_net_value": 66173.0
       }
     },
     "realistic": {
@@ -191,6 +237,11 @@
           "qini_coefficient": 0.0021,
           "corr_with_true_uplift": 0.4398,
           "pehe": 0.1003
+        },
+        "ChurnUpliftNet": {
+          "qini_coefficient": 0.0038,
+          "corr_with_true_uplift": 0.455,
+          "pehe": 0.0759
         },
         "churn-risk ranking (non-causal)": {
           "qini_coefficient": 0.0042,
@@ -241,6 +292,20 @@
           "discount_cost_usd": 19253.0
         },
         {
+          "policy": "Own model: top 20% by predicted uplift",
+          "customers_targeted": 422,
+          "churners_prevented": 55.1,
+          "net_value_usd": 24265.0,
+          "discount_cost_usd": 10601.0
+        },
+        {
+          "policy": "Own model: offer if expected value > 0",
+          "customers_targeted": 694,
+          "churners_prevented": 74.7,
+          "net_value_usd": 30742.0,
+          "discount_cost_usd": 20152.0
+        },
+        {
           "policy": "Oracle (true effect, upper bound)",
           "customers_targeted": 563,
           "churners_prevented": 86.7,
@@ -255,6 +320,8 @@
         "Top 20% by predicted uplift": 31013.0,
         "Churn risk, same # of offers as uplift policy": 28921.0,
         "Uplift model: offer if expected value > 0": 33661.0,
+        "Own model: top 20% by predicted uplift": 24265.0,
+        "Own model: offer if expected value > 0": 30742.0,
         "Oracle (true effect, upper bound)": 45383.0
       },
       "headline": {
@@ -262,7 +329,10 @@
         "churn_risk_top20_net_value": 12913.0,
         "churn_risk_same_budget_net_value": 28921.0,
         "offer_everyone_net_value": -3745.0,
-        "oracle_net_value": 45383.0
+        "oracle_net_value": 45383.0,
+        "uplift_top20_net_value": 31013.0,
+        "own_policy_net_value": 30742.0,
+        "own_top20_net_value": 24265.0
       }
     }
   },

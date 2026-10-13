@@ -21,7 +21,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=25">
+  <link rel="stylesheet" href="/static/styles.css?v=27">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%230b2a1b'/><g transform='translate(4 4)' fill='%23f1f6f2'><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(130.0 12 12)'/><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(155.5 12 12)'/><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(180.9 12 12)'/><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(206.4 12 12)'/><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(231.8 12 12)'/><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(257.3 12 12)'/><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(282.7 12 12)'/><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(308.2 12 12)'/><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(333.6 12 12)'/><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(359.1 12 12)'/><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(384.5 12 12)'/><rect x='11' y='1.8' width='2' height='6' rx='1' transform='rotate(410.0 12 12)'/><circle cx='12' cy='12' r='2.6' fill='%2345e07a'/></g></svg>">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
@@ -72,7 +72,10 @@
       <button id="themeDark" aria-label="Dark mode" title="Dark mode"><svg class="icon"><use href="#i-moon"/></svg></button>
       <button id="themeLight" aria-label="Light mode" title="Light mode"><svg class="icon"><use href="#i-sun"/></svg></button>
     </div>
-    <span class="status" id="modelChip" title="Models loaded"><i></i><span>Live</span></span>
+    <div class="model-switch" id="modelSwitch" role="group" aria-label="Model used for predictions">
+      <button data-model="own" title="ChurnUpliftNet: neural network written from scratch in NumPy">Own model</button>
+      <button data-model="library" title="XGBoost + S-learner from libraries">Library</button>
+    </div>
   </header>
 
   <main class="main">
@@ -183,6 +186,13 @@
       <div class="page-head"><div><h1>Model Performance</h1>
         <p>Held-out test results for the churn model and the uplift targeting policy.</p></div></div>
       <div class="metrics" id="metrics"></div>
+      <div class="card cmp">
+        <div class="card-head"><h3>Own model vs library models</h3><span class="hint" id="appliedNote"></span></div>
+        <div class="sub">Churn prediction on the same held-out test set (1,409 customers). Best value in each column is bold.</div>
+        <div class="table-wrap"><table id="churnTable" class="plain"></table></div>
+        <div class="sub" style="margin-top:18px">Uplift on held-out experiment data. Qini: higher is better.</div>
+        <div class="table-wrap"><table id="upliftTable" class="plain"></table></div>
+      </div>
       <div class="figs">
         <div class="card"><h3>Targeting policy value</h3><div class="sub">Net value on the test set, realistic scenario</div><div class="chart-box"><canvas id="policyChart"></canvas></div></div>
         <div class="card"><h3>When does uplift beat risk targeting?</h3><div class="sub">Net value by scenario, $k</div><div class="chart-box"><canvas id="scenarioChart"></canvas></div></div>
@@ -198,22 +208,36 @@
     <section class="view" id="view-about">
       <div class="page-head"><div><h1>How It Works</h1><p>From raw customer data to a profitable retention decision.</p></div></div>
       <div class="card prose">
+        <h3>The model: ChurnUpliftNet, written from scratch</h3>
+        <p>The default model in this app is not a ready-made library model. It is a neural network implemented by hand
+          in NumPy: the feature encoding, forward pass, backpropagation, Adam optimiser, training loop with early
+          stopping, and the per-customer explanations are all written out in
+          <code>src/churn/ownmodel.py</code>. A gradient check in the tests confirms the backpropagation maths.</p>
+        <p>One network answers both questions. A shared trunk learns what kind of customer this is. A
+          <strong>base head</strong> predicts churn risk if nothing is done. An <strong>effect head</strong> predicts how
+          the retention offer shifts that risk:</p>
+        <p><code>P(churn, no offer) = sigmoid(z0)</code> &nbsp; <code>P(churn, offer) = sigmoid(z0 + delta)</code> &nbsp;
+          <code>uplift = difference</code></p>
+        <p>It is compared on the same test data against XGBoost, logistic regression and library uplift learners on
+          the Model page. Use the switch in the header to apply either model set to the whole app.</p>
         <h3>1. Predict who will churn</h3>
-        <p>An XGBoost model (tuned with 5-fold cross-validation, compared against a logistic-regression baseline)
-          estimates each customer's churn probability from contract, tenure, services, billing and payment data.</p>
+        <p>The base head (or, in library mode, a tuned XGBoost model) estimates each customer's churn probability from
+          contract, tenure, services, billing and payment data.</p>
         <h3>2. Explain why</h3>
-        <p>SHAP values break every prediction into per-feature contributions, so each customer gets their own
-          top risk factors, not just a global feature ranking.</p>
+        <p>Each prediction is broken into per-feature contributions. The own model uses <em>occlusion</em>: replace one
+          feature with the average customer's value and measure how much the risk drops. Library mode uses SHAP.</p>
         <h3>3. Decide who to target, with uplift modelling</h3>
-        <p>High risk does not mean a discount will help. An S-learner estimates how much the offer
-          <em>changes</em> each customer's churn probability. Customers are grouped into:</p>
+        <p>High risk does not mean a discount will help. The effect head (or an S-learner in library mode) estimates how
+          much the offer <em>changes</em> each customer's churn probability. Customers are grouped into:</p>
         <ul id="segExplain"></ul>
-        <p>An offer is sent only when <code>uplift × monthly bill × 12 − discount cost</code> exceeds a $20 margin.</p>
+        <p>An offer is sent when <code>uplift × monthly bill × 12 − discount cost</code> is positive.</p>
         <h3>4. Honest caveat</h3>
         <p>Public churn data has no record of past offers, so the offer experiment is <strong>semi-synthetic</strong>:
           real customers and churn baselines, with a simulated randomized offer whose true effect is known. That lets
           the targeting be scored exactly. In production you would train the uplift model on a real A/B pilot.
-          Individual uplift estimates are noisy; the model is most reliable for ranking groups of customers.</p>
+          Individual uplift estimates are noisy; the models are most reliable for ranking groups of customers.
+          The own model matches the library models on churn prediction and is somewhat weaker on uplift in the
+          realistic scenario; it rarely flags sleeping dogs because their effect is very small.</p>
         <p>The Insights Assistant on the overview is rule-based: it looks up answers in the scored data and is not a
           language model.</p>
         <p>REST API docs: <a href="/docs">/docs</a></p>
@@ -224,6 +248,6 @@
 
 <div class="backdrop" id="sheetBackdrop"></div>
 <div class="toast" id="toast"></div>
-<script src="/static/app.js?v=25"></script>
+<script src="/static/app.js?v=27"></script>
 </body>
 </html>

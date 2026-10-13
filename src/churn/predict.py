@@ -1,11 +1,16 @@
-"""Inference: churn risk + per-customer reasons + retention-offer recommendation."""
+"""Inference: churn risk + per-customer reasons + retention-offer recommendation.
+
+Two interchangeable model sets:
+  "own"      ChurnUpliftNet, the from-scratch NumPy network (risk, uplift and explanations from one model)
+  "library"  XGBoost churn model + SHAP + the best library uplift learner
+"""
 from functools import lru_cache
 
 import joblib
 import numpy as np
 import shap
 
-from .config import CHURN_MODEL_PATH, MIN_OFFER_VALUE, UPLIFT_MODEL_PATH
+from .config import CHURN_MODEL_PATH, MIN_OFFER_VALUE, OWN_MODEL_PATH, UPLIFT_MODEL_PATH
 from .data import prepare_input
 from .features import aggregate_by_feature, original_feature_groups
 from .uplift import offer_economics
@@ -19,6 +24,20 @@ def load_models():
     explainer = shap.TreeExplainer(pipe.named_steps["clf"])
     groups = original_feature_groups(pipe.named_steps["pre"])
     return churn, uplift, explainer, groups
+
+
+MODELS = ("own", "library")
+DEFAULT_MODEL = "own"
+
+
+@lru_cache(maxsize=1)
+def load_own():
+    return joblib.load(OWN_MODEL_PATH)
+
+
+def model_names() -> dict:
+    churn, uplift, _, _ = load_models()
+    return {"own": load_own()["name"], "library": f"{'XGBoost' if churn['model_name'] == 'xgboost' else 'Logistic Regression'} + {uplift['name']}"}
 
 
 def risk_level(p: float) -> str:
@@ -35,21 +54,30 @@ def recommend(uplift: float, value: float, p0: float) -> tuple[str, str]:
     return "do_not_send", "At-risk, but a discount won't change their decision. Try a service fix instead."
 
 
-def score(records: list[dict], top_k: int = 3) -> list[dict]:
-    churn, uplift_art, explainer, groups = load_models()
+def score(records: list[dict], top_k: int = 3, model: str = DEFAULT_MODEL) -> list[dict]:
+    if model not in MODELS:
+        raise ValueError(f"unknown model {model!r}; choose one of {MODELS}")
     X = prepare_input(records)
-    pipe = churn["pipeline"]
-    proba = pipe.predict_proba(X)[:, 1]
-
-    sv = explainer.shap_values(pipe.named_steps["pre"].transform(X))
-    learner = uplift_art["learner"]
-    p0_hat, p1_hat = learner.predict_outcomes(X)
-    u_hat = learner.predict_uplift(X)
+    if model == "own":
+        art = load_own()
+        net, threshold = art["model"], art["threshold"]
+        p0_hat, p1_hat = net.predict_outcomes(X)
+        proba, u_hat = p0_hat, p0_hat - p1_hat
+        contribs = net.explain(X)  # occlusion, implemented in ownmodel.py
+    else:
+        churn, uplift_art, explainer, groups = load_models()
+        pipe, threshold = churn["pipeline"], churn["threshold"]
+        proba = pipe.predict_proba(X)[:, 1]
+        sv = explainer.shap_values(pipe.named_steps["pre"].transform(X))
+        contribs = [aggregate_by_feature(row, groups) for row in sv]
+        learner = uplift_art["learner"]
+        p0_hat, p1_hat = learner.predict_outcomes(X)
+        u_hat = learner.predict_uplift(X)
     ev = offer_economics(X, p1_hat, u_hat)
 
     results = []
     for i in range(len(X)):
-        contrib = aggregate_by_feature(sv[i], groups)
+        contrib = contribs[i]
         drivers = sorted(contrib.items(), key=lambda kv: -kv[1])
         reasons = [
             {"feature": f, "value": _fmt(X.iloc[i][f]), "impact": round(v, 3)}
@@ -59,12 +87,13 @@ def score(records: list[dict], top_k: int = 3) -> list[dict]:
         results.append({
             "churn_probability": round(float(proba[i]), 4),
             "risk_level": risk_level(float(proba[i])),
-            "predicted_churn": bool(proba[i] >= churn["threshold"]),
+            "predicted_churn": bool(proba[i] >= threshold),
             "top_risk_factors": reasons,
             "offer_uplift": round(float(u_hat[i]), 4),
             "offer_expected_value_usd": round(float(ev[i]), 2),
             "recommendation": action,
             "recommendation_reason": why,
+            "contributions": {f: round(v, 4) for f, v in contrib.items()},
         })
     return results
 

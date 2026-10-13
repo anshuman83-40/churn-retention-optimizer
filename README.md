@@ -10,6 +10,10 @@ some high-risk customers will leave no matter what (**lost causes**), some would
 **causal uplift model** that estimates how much a discount *changes* each customer's behaviour, and
 targets offers by expected profit.
 
+The default model is **ChurnUpliftNet, a neural network written from scratch in NumPy** (no ML library):
+one network predicts both churn risk and the offer's effect. It is benchmarked against XGBoost, logistic
+regression and library uplift learners on the same test data. See [docs/OWN_MODEL.md](docs/OWN_MODEL.md).
+
 **🔗 Live demo: [churn-retention-optimizer.onrender.com](https://churn-retention-optimizer.onrender.com)** · **API docs: [/docs](https://churn-retention-optimizer.onrender.com/docs)**
 
 > Free hosting: the first visit after a quiet period takes ~1 minute while the server wakes up.
@@ -22,6 +26,7 @@ targets offers by expected profit.
 
 A custom web app (HTML/CSS/JS + Chart.js) served by the FastAPI backend, scoring all 7,043 customers:
 
+- **Model switch** in the header: apply the from-scratch model (default) or the library models to the whole app
 - **Overview**: KPIs (predicted churn rate, 12-month revenue at risk, customers worth saving), churn by
   tenure (actual vs model prediction), an uplift-segment gauge, the best offer candidates, and an
   **Insights Assistant** with quick actions and customer search (rule-based lookups over the scored data,
@@ -42,7 +47,7 @@ Every number on screen comes from the models. There are no invented names, dates
 
 | Segment | Meaning | Action |
 |---|---|---|
-| Persuadable | Offer expected to pay off (> $20 expected value) | Send the offer |
+| Persuadable | Offer has positive expected value | Send the offer |
 | Lost Cause | High risk, but a discount won't change the outcome | Fix the service issue instead |
 | Sleeping Dog | Offer is likely to *increase* churn | Do not contact |
 | Loyal | Low churn risk | No retention spend |
@@ -56,15 +61,18 @@ Every number on screen comes from the models. There are no invented names, dates
 
 | Model | ROC-AUC | PR-AUC | F1 | Recall | Brier |
 |---|---|---|---|---|---|
-| Logistic Regression (baseline) | 0.845 | 0.651 | 0.624 | 0.709 | 0.166 |
-| **XGBoost (tuned, 30×5-fold CV)** | **0.847** | **0.668** | **0.639** | 0.711 | **0.135** |
+| **ChurnUpliftNet (own, NumPy from scratch)** | 0.846 | 0.656 | 0.615 | 0.634 | 0.136 |
+| XGBoost (library, tuned 30×5-fold CV) | **0.847** | **0.668** | **0.639** | **0.711** | **0.135** |
+| Logistic Regression (library baseline) | 0.845 | 0.651 | 0.624 | 0.709 | 0.166 |
 
-- **2.8x lift** in the top-risk decile: 10% of customers contain 28% of churners.
-- XGBoost beats the linear baseline only slightly on ranking (AUC), but is clearly better calibrated (Brier
-  0.135 vs 0.166). That matters because the profit calculation uses the probabilities directly.
-- Decision threshold chosen by maximising F1 on out-of-fold training predictions (no test leakage).
+- The from-scratch network **matches the library models on ranking** (AUC within 0.001 of XGBoost) and is
+  almost as well calibrated (Brier 0.136 vs 0.135). XGBoost still has the best F1 and recall.
+- **2.8x lift** in the top-risk decile for both: 10% of customers contain 28% of churners.
+- Calibration matters because the profit calculation uses the probabilities directly; the linear baseline
+  is clearly worse there (Brier 0.166).
+- Decision thresholds are chosen on training data only (no test leakage).
 
-**Top churn drivers (SHAP):** contract type ≫ tenure > internet service > online security > tech support.
+**Top churn drivers (XGBoost, SHAP):** contract type ≫ tenure > internet service > online security > tech support.
 
 ![SHAP](reports/figures/shap_importance.png)
 
@@ -80,10 +88,17 @@ Evaluated on 2,113 held-out customers against the **known true effect** (see met
 | **Top 20% by predicted uplift** | 422 | 65.3 | **$31,013 (2.4x)** |
 | Churn risk, same budget as uplift policy | 865 | 69.4 | $28,921 |
 | **Uplift model: offer if expected value > 0** | 865 | 78.6 | **$33,661** |
+| Own model: top 20% by predicted uplift | 422 | 55.1 | $24,265 (1.9x) |
+| Own model: offer if expected value > 0 | 694 | 74.7 | $30,742 |
 | Oracle (true effects, upper bound) | 563 | 86.7 | $45,383 |
 
 **With the same budget, uplift targeting prevents 2.4x more churn and earns 2.4x more value than risk targeting.**
 The S-learner was selected over T- and X-learners by Qini coefficient (correlation with the true effect 0.78).
+
+**How the from-scratch model compares on uplift:** in the realistic scenario it is behind the library
+S-learner ($30.7k vs $33.7k with the "positive expected value" rule, $24.3k vs $31.0k at a fixed 20% budget)
+but still well ahead of risk targeting. In the risk-aligned scenario it ties the S-learner ($114.4k vs
+$114.9k, Qini 0.0144 vs 0.0143). Tree models have an edge here because the true effect follows sharp rules.
 
 ### 3. When is uplift modelling *not* worth it?
 
@@ -125,9 +140,9 @@ score targeting policies exactly. **In production you would replace step 1–3 w
 randomized pilot campaign**; the rest of the pipeline is unchanged.
 
 **Expected value of an offer** = `uplift × monthly bill × 12` − `discount × 3 months × P(stays | offer)`.
-The policy evaluation above sends offers when this is > 0. The live app requires > $20, because individual
-uplift estimates are noisy (the model ranks groups well, single customers less precisely) and contacting a
-customer has a cost.
+Offers are sent when this is positive, in the evaluation and in the live app. A $20 safety margin was tried
+and removed: on held-out data it lowered the true value of the recommendations for both model sets
+($33.7k → $27.8k for the library pipeline, $30.7k → $8.7k for the own model).
 
 ## Project structure
 
@@ -138,7 +153,8 @@ src/churn/
   train.py       LogReg baseline vs tuned XGBoost, threshold selection, SHAP
   learners.py    S-, T-, X-learner uplift models
   uplift.py      experiment simulation, Qini evaluation, policy economics, scenarios
-  predict.py     inference: risk + reasons + recommendation
+  ownmodel.py    ChurnUpliftNet: NumPy-only network (encoder, backprop, Adam, calibration, explanations)
+  predict.py     inference with either model set: risk + reasons + recommendation
   service.py     scores the customer base; KPIs, segments, table queries for the dashboard
   pipeline.py    runs everything end to end
 api/main.py      FastAPI: /predict, /api/* dashboard endpoints, serves the web app
@@ -153,7 +169,7 @@ python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\
 pip install -r requirements-dev.txt && pip install -e .
 
 python -m churn.pipeline                 # EDA -> train -> uplift (~2 min), writes models/ and reports/
-pytest -q                                # 15 tests
+pytest -q                                # 24 tests, incl. a gradient check of the backprop
 
 uvicorn api.main:app --reload            # dashboard -> http://localhost:8000, API docs -> /docs
 ```

@@ -7,8 +7,10 @@ const usd = (v) => {
   const a = Math.abs(v), sign = v < 0 ? "-" : "";
   return sign + (a >= 1e6 ? `$${(a / 1e6).toFixed(2)}M` : a >= 1e4 ? `$${(a / 1e3).toFixed(1)}k` : `$${Math.round(a).toLocaleString()}`);
 };
+// Every data call names the model set to use: "own" (ChurnUpliftNet) or "library" (XGBoost + S-learner).
+const withModel = (path) => `${path}${path.includes("?") ? "&" : "?"}model=${state.model}`;
 const api = async (path, opts) => {
-  const r = await fetch(path, opts);
+  const r = await fetch(withModel(path), opts);
   if (!r.ok) throw new Error(`${r.status} ${path}`);
   return r.json();
 };
@@ -32,7 +34,13 @@ const riskVar = (p) => (p >= 0.6 ? "--red" : p >= 0.3 ? "--amber" : "--green");
 const tag = (seg) => `<span class="tag" style="--c:var(${SEG[seg]?.c || "--muted"})">${esc(seg)}</span>`;
 const meter = (v, cvar) => `<div class="meter"><i style="width:${Math.max(0, Math.min(1, v)) * 100}%;background:var(${cvar})"></i></div>`;
 
-const state = { view: "overview", segment: "all", q: "", sort: "churn_probability", desc: true, page: 1, size: 12, selected: null, summary: null, detail: null, tab: "factors" };
+const initialModel = () => {
+  const q = /[?&]model=(own|library)/.exec(location.search);
+  if (q) return q[1];
+  try { const m = localStorage.getItem("churnopt.model"); if (m === "own" || m === "library") return m; } catch { /* ignore */ }
+  return "own";
+};
+const state = { model: initialModel(), view: "overview", segment: "all", q: "", sort: "churn_probability", desc: true, page: 1, size: 12, selected: null, summary: null, detail: null, tab: "factors" };
 const charts = {};
 
 /* ------------------------------------------------------------------ theme */
@@ -42,6 +50,28 @@ function setTheme(t) {
   if (state.view === "model") renderModel(); // Chart.js canvases need redrawing with the new colours
   else renderModel.stale = true;
 }
+
+/* ------------------------------------------------------------------ model switch */
+function paintModelSwitch() {
+  $$("#modelSwitch button").forEach((b) => b.classList.toggle("active", b.dataset.model === state.model));
+}
+async function setModel(m) {
+  if (m === state.model) return;
+  state.model = m;
+  try { localStorage.setItem("churnopt.model", m); } catch { /* storage unavailable */ }
+  paintModelSwitch();
+  toast("Scoring customers with the selected model…");
+  state.summary = await api("/api/summary");
+  state.selected = null;
+  state.detail = null;
+  renderOverview(state.summary);
+  renderCandidates();
+  renderModel.stale = true;
+  addMsg("bot", `Now using ${esc(state.summary.served.name)}. Numbers on every page come from this model.`);
+  toast(`Model: ${state.summary.served.name}`);
+  route();
+}
+const impactLabel = () => (state.model === "own" ? "Occlusion impact on churn log-odds (own model)" : "SHAP impact on churn log-odds");
 
 /* ------------------------------------------------------------------ campaign (per-browser) */
 const store = {
@@ -100,7 +130,7 @@ function highlightGauge(el, i) {
 /* ------------------------------------------------------------------ overview */
 function renderOverview(s) {
   const k = s.kpis;
-  $("#modelChip").title = `XGBoost + ${s.model.uplift_learner}, models loaded`;
+  $("#stamp").textContent = `${s.served.name} · ${k.total_customers.toLocaleString()} customers`;
 
   // --- churn by tenure: CSS bars (actual) with a marker line for the model's prediction
   const t = s.churn_by_tenure;
@@ -216,7 +246,7 @@ const ANSWERS = {
       ${custList(d.rows, (r) => usd(r.offer_expected_value_usd))}<a href="#" data-filter="sleeping_dog">See all sleeping dogs →</a>`;
   },
   async drivers() {
-    return `The biggest churn drivers, by share of the model's total SHAP impact:
+    return `The biggest churn drivers, by share of the model's total feature impact:
       <div class="msg-list">${state.summary.top_factors.map((f) => `<div class="msg-item"><span>${esc(f.name)}</span><b>${pct(f.share, 0)}</b></div>`).join("")}</div>`;
   },
   async revenue() {
@@ -267,7 +297,7 @@ function openCustomer(id) {
 async function loadTable() {
   const p = new URLSearchParams({ segment: state.segment, q: state.q, sort: state.sort, desc: state.desc, page: state.page, size: state.size });
   const data = await api(`/api/customers?${p}`);
-  $("#exportBtn").href = `/api/customers/export.csv?${new URLSearchParams({ segment: state.segment, q: state.q })}`;
+  $("#exportBtn").href = `/api/customers/export.csv?${new URLSearchParams({ segment: state.segment, q: state.q, model: state.model })}`;
   $("#tableHint").textContent = `${FILTERS.find((f) => f[0] === state.segment)?.[1] || "All"} · ${data.total.toLocaleString()} customers`;
   $$("th[data-sort]").forEach((th) => {
     th.querySelector(".arrow")?.remove();
@@ -331,7 +361,7 @@ function renderInsight() {
   const maxImpact = Math.max(0.01, ...c.factors.map((f) => f.impact));
   const tabs = {
     factors: c.factors.length ? c.factors.map((f) => `
-      <div class="frow"><span>${esc(f.label)}</span>${meter(f.impact / maxImpact, rv)}<span class="num">${f.impact.toFixed(2)}</span></div>`).join("") + `<div class="hint">SHAP impact on churn log-odds</div>`
+      <div class="frow"><span>${esc(f.label)}</span>${meter(f.impact / maxImpact, rv)}<span class="num">${f.impact.toFixed(2)}</span></div>`).join("") + `<div class="hint">${impactLabel()}</div>`
       : `<div class="hint">No factors pushing this customer toward churn.</div>`,
     profile: `<div class="kv">
       <span>Contract</span><b>${esc(c.Contract)}</b><span>Tenure</span><b>${c.tenure} month${c.tenure === 1 ? "" : "s"}</b>
@@ -340,7 +370,7 @@ function renderInsight() {
       <span>Senior / Partner</span><b>${esc(c.SeniorCitizen)} / ${esc(c.Partner)}</b><span>Paperless</span><b>${esc(c.PaperlessBilling)}</b></div>`,
     offer: `<div class="kv">
       <span>Churn cut by offer</span><b>${(c.offer_uplift * 100).toFixed(1)} pp</b>
-      <span>Expected value</span><b style="color:var(${c.offer_expected_value_usd > 20 ? "--green-ink" : "--amber"})">${usd(c.offer_expected_value_usd)}</b>
+      <span>Expected value</span><b style="color:var(${c.offer_expected_value_usd > 0 ? "--green-ink" : "--amber"})">${usd(c.offer_expected_value_usd)}</b>
       <span>Decision</span><b>${c.recommendation === "send_offer" ? "Send offer" : "Don't send"}</b></div>
       <div class="reason">${esc(c.segment_description)}</div><div class="reason">${esc(c.recommendation_reason)}</div>`,
   };
@@ -451,7 +481,7 @@ function predictWhatIf() {
         <div><div class="label">Offer cuts churn by</div><div class="v">${(r.offer_uplift * 100).toFixed(1)} pp</div></div>
         <div><div class="label">Expected offer value</div><div class="v">${usd(r.offer_expected_value_usd)}</div></div>
       </div>
-      <h4 style="margin:4px 0 12px">Why? <span class="hint">SHAP impact</span></h4>
+      <h4 style="margin:4px 0 12px">Why? <span class="hint">${state.model === "own" ? "occlusion impact" : "SHAP impact"}</span></h4>
       ${r.top_risk_factors.length ? r.top_risk_factors.map((f) => `<div class="frow"><span>${esc(f.feature)} = ${esc(f.value)}</span>${meter(f.impact / maxImpact, rv)}<span class="num">+${f.impact.toFixed(2)}</span></div>`).join("") : `<div class="hint">Nothing is pushing this customer toward churn.</div>`}`;
     tickGauge($("#riskGauge"), [{ share: Math.max(r.churn_probability, 0.001), c: rv }, { share: 1 - r.churn_probability, c: "--track" }]);
   }, 150);
@@ -496,6 +526,8 @@ const SHORT_POLICY = {
   "Top 20% by predicted uplift": "Uplift, top 20%",
   "Churn risk, same # of offers as uplift policy": "Risk, same budget",
   "Uplift model: offer if expected value > 0": "Uplift, value > 0",
+  "Own model: top 20% by predicted uplift": "Own model, top 20%",
+  "Own model: offer if expected value > 0": "Own model, value > 0",
   "Oracle (true effect, upper bound)": "Oracle (max)",
 };
 function renderModel() {
@@ -505,12 +537,27 @@ function renderModel() {
   renderModel.done = true;
   renderModel.stale = false;
   const u = m.uplift_vs_risk;
+  const own = state.model === "own";
+  const cm = m.churn_models.find((x) => x.own === own);        // the model set currently applied
+  const other = m.churn_models.find((x) => x.own !== own && x.lift);
+  const top20 = own ? m.own_vs_risk.own_top20 : u.uplift;
   $("#metrics").innerHTML = [
-    ["ROC-AUC", m.roc_auc.toFixed(3), `Logistic baseline ${m.baseline_roc_auc.toFixed(3)}`],
-    ["PR-AUC", m.pr_auc.toFixed(3), `F1 ${m.f1.toFixed(3)} · recall ${pct(m.recall, 0)}`],
-    ["Top-decile lift", `${m.lift.toFixed(1)}x`, "10% riskiest hold 28% of churners"],
-    ["Uplift vs risk targeting", `${(u.uplift / u.risk).toFixed(1)}x`, `${usd(u.uplift)} vs ${usd(u.risk)}, same budget`],
+    ["ROC-AUC", cm.roc_auc.toFixed(3), `${other.name.split(" (")[0]} ${other.roc_auc.toFixed(3)}`],
+    ["PR-AUC", cm.pr_auc.toFixed(3), `F1 ${cm.f1.toFixed(3)} · recall ${pct(cm.recall, 0)}`],
+    ["Top-decile lift", `${cm.lift.toFixed(1)}x`, `10% riskiest hold ${Math.round(cm.lift * 10)}% of churners`],
+    ["Uplift vs risk targeting", `${(top20 / u.risk).toFixed(1)}x`, `${usd(top20)} vs ${usd(u.risk)}, same budget`],
   ].map(([l, v, s]) => `<div class="card metric"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
+  $("#appliedNote").innerHTML = `Applied in the app right now: <b>${esc(state.summary.served.name)}</b>. Switch models with the control in the header.`;
+
+  const best = (rows, key, lower) => rows.reduce((a, r) => (r[key] == null ? a : a == null || (lower ? r[key] < a : r[key] > a) ? r[key] : a), null);
+  const cell = (rows, r, key, d, lower) => `<td class="${r[key] === best(rows, key, lower) ? "best" : ""}">${r[key] == null ? "–" : r[key].toFixed(d)}</td>`;
+  $("#churnTable").innerHTML = `<thead><tr><th class="nosort">Model</th><th class="nosort">ROC-AUC</th><th class="nosort">PR-AUC</th><th class="nosort">F1</th><th class="nosort">Recall</th><th class="nosort">Brier ↓</th></tr></thead><tbody>${
+    m.churn_models.map((r) => `<tr class="${r.own ? "own-row" : ""}"><td>${esc(r.name)}${(own ? r.own : r === other) ? ' <span class="chip">applied</span>' : ""}</td>${cell(m.churn_models, r, "roc_auc", 3)}${cell(m.churn_models, r, "pr_auc", 3)}${cell(m.churn_models, r, "f1", 3)}${cell(m.churn_models, r, "recall", 3)}${cell(m.churn_models, r, "brier", 3, true)}</tr>`).join("")}</tbody>`;
+  const sc0 = Object.keys(m.uplift_learners);
+  const learners = Object.keys(m.uplift_learners[sc0[0]]);
+  const urows = learners.map((name) => ({ name, ...Object.fromEntries(sc0.flatMap((scn) => [[`q_${scn}`, m.uplift_learners[scn][name].qini_coefficient], [`c_${scn}`, m.uplift_learners[scn][name].corr_with_true_uplift]])) }));
+  $("#upliftTable").innerHTML = `<thead><tr><th class="nosort">Uplift model</th>${sc0.map((scn) => `<th class="nosort">Qini, ${scn.replace("_", "-")}</th><th class="nosort">Corr. with true effect</th>`).join("")}</tr></thead><tbody>${
+    urows.map((r) => `<tr class="${r.name === "ChurnUpliftNet" ? "own-row" : ""}"><td>${esc(r.name)}${r.name === "ChurnUpliftNet" ? " (own, NumPy)" : ""}</td>${sc0.map((scn) => cell(urows, r, `q_${scn}`, 4) + cell(urows, r, `c_${scn}`, 2)).join("")}</tr>`).join("")}</tbody>`;
 
   const C = { text: css("--text"), muted: css("--muted"), line: css("--line"), green: css("--green"), bright: css("--green-bright"), red: css("--red"), dim: css("--dim"), card: css("--card") };
   Chart.defaults.color = C.muted;
@@ -526,14 +573,14 @@ function renderModel() {
     type: "bar",
     data: { labels: pol.map((p) => SHORT_POLICY[p.policy] || p.policy),
       datasets: [{ data: pol.map((p) => p.net_value_usd), borderRadius: 7, borderSkipped: false, maxBarThickness: 26,
-        backgroundColor: pol.map((p) => (p.net_value_usd < 0 ? C.red : /uplift/i.test(p.policy) ? C.bright : p.policy.startsWith("Oracle") ? C.text : C.dim)) }] },
+        backgroundColor: pol.map((p) => (p.net_value_usd < 0 ? C.red : p.policy.startsWith("Own") ? C.green : /uplift/i.test(p.policy) ? C.bright + "99" : p.policy.startsWith("Oracle") ? C.text : C.dim)) }] },
     options: { indexAxis: "y", maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { label: (c) => `Net value ${usd(c.parsed.x)}` } } },
       scales: { x: { ticks: { callback: (v) => usd(v) }, grid, border }, y: { grid: { display: false }, border } } },
   });
 
   const sc = m.scenarios, keys = Object.keys(sc);
   const series = [["Risk, top 20%", "churn_risk_top20_net_value", C.dim], ["Risk, same budget", "churn_risk_same_budget_net_value", C.muted],
-    ["Uplift model", "uplift_policy_net_value", C.bright], ["Oracle (max)", "oracle_net_value", C.text]];
+    ["Library uplift", "uplift_policy_net_value", C.bright + "99"], ["Own model", "own_policy_net_value", C.green], ["Oracle (max)", "oracle_net_value", C.text]];
   charts.scenario = new Chart($("#scenarioChart"), {
     type: "bar",
     data: { labels: keys.map((k) => k.replace("_", "-")),
@@ -563,6 +610,8 @@ function renderModel() {
 async function init() {
   updateCampaignBadge();
   renderFilters();
+  paintModelSwitch();
+  $$("#modelSwitch button").forEach((b) => b.addEventListener("click", () => setModel(b.dataset.model)));
   $("#themeDark").addEventListener("click", () => setTheme("dark"));
   $("#themeLight").addEventListener("click", () => setTheme("light"));
   $$("th[data-sort]").forEach((th) => th.addEventListener("click", () => {

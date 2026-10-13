@@ -2,10 +2,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
-from churn.config import CHURN_MODEL_PATH, UPLIFT_MODEL_PATH
+from churn.config import CHURN_MODEL_PATH, OWN_MODEL_PATH, UPLIFT_MODEL_PATH
 
 pytestmark = pytest.mark.skipif(
-    not (CHURN_MODEL_PATH.exists() and UPLIFT_MODEL_PATH.exists()),
+    not (CHURN_MODEL_PATH.exists() and UPLIFT_MODEL_PATH.exists() and OWN_MODEL_PATH.exists()),
     reason="models not trained; run `python -m churn.pipeline` first",
 )
 
@@ -22,16 +22,25 @@ def test_health(client):
 
 
 def test_high_risk_customer_gets_offer(client, customer):
-    body = client.post("/predict", json=customer).json()
+    body = client.post("/predict", params={"model": "library"}, json=customer).json()
     assert body["risk_level"] == "high"
     assert body["recommendation"] == "send_offer"
     assert body["top_risk_factors"][0]["feature"] == "Contract"
 
 
-def test_loyal_customer_no_offer(client, loyal_customer):
-    body = client.post("/predict", json=loyal_customer).json()
+@pytest.mark.parametrize("model", ["own", "library"])
+def test_loyal_customer_no_offer(client, loyal_customer, model):
+    body = client.post("/predict", params={"model": model}, json=loyal_customer).json()
     assert body["churn_probability"] < 0.15
     assert body["recommendation"] == "do_not_send"
+
+
+def test_own_model_is_default_and_ranks_risk(client, customer, loyal_customer):
+    assert client.get("/health").json()["default_model"] == "ChurnUpliftNet"
+    risky, loyal = (client.post("/predict", json=c).json() for c in (customer, loyal_customer))
+    assert risky["churn_probability"] > 0.5 > loyal["churn_probability"]
+    assert risky["top_risk_factors"] and risky["offer_uplift"] > loyal["offer_uplift"]
+    assert client.post("/predict", params={"model": "nope"}, json=customer).status_code == 422
 
 
 def test_batch_and_validation(client, customer, loyal_customer):
@@ -40,8 +49,10 @@ def test_batch_and_validation(client, customer, loyal_customer):
     assert client.post("/predict", json={**customer, "Contract": "Weekly"}).status_code == 422
 
 
-def test_dashboard_summary(client):
-    s = client.get("/api/summary").json()
+@pytest.mark.parametrize("model", ["own", "library"])
+def test_dashboard_summary(client, model):
+    s = client.get("/api/summary", params={"model": model}).json()
+    assert s["served"]["key"] == model and len(s["model"]["churn_models"]) == 3
     assert s["kpis"]["total_customers"] == 7043
     assert abs(sum(seg["share"] for seg in s["segments"]) - 1) < 1e-3
     assert len(s["churn_by_tenure"]["actual"]) == len(s["churn_by_tenure"]["labels"])

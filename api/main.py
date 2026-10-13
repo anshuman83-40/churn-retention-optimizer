@@ -10,9 +10,10 @@ from pydantic import BaseModel, Field
 
 from churn import service
 from churn.config import FIGURES_DIR
-from churn.predict import load_models, score
+from churn.predict import DEFAULT_MODEL, load_models, load_own, score
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
+ModelChoice = Literal["own", "library"]
 YesNo = Literal["Yes", "No"]
 YesNoNoInternet = Literal["Yes", "No", "No internet service"]
 
@@ -20,7 +21,8 @@ YesNoNoInternet = Literal["Yes", "No", "No internet service"]
 @asynccontextmanager
 async def lifespan(_app):
     load_models()  # warm the models once at startup
-    service.customer_base()  # score the whole customer base for the dashboard
+    load_own()
+    service.customer_base(DEFAULT_MODEL)  # score the base for the dashboard (the other model on first use)
     yield
 
 
@@ -76,7 +78,8 @@ class Prediction(BaseModel):
 @app.get("/health")
 def health():
     churn, uplift, _, _ = load_models()
-    return {"status": "ok", "churn_model": churn["model_name"], "uplift_model": uplift["name"]}
+    return {"status": "ok", "default_model": load_own()["name"], "churn_model": churn["model_name"],
+            "uplift_model": uplift["name"]}
 
 
 def _records(customers: list[Customer]) -> list[dict]:
@@ -90,37 +93,38 @@ def _records(customers: list[Customer]) -> list[dict]:
 
 
 @app.post("/predict", response_model=Prediction)
-def predict(customer: Customer):
-    return score(_records([customer]))[0]
+def predict(customer: Customer, model: ModelChoice = DEFAULT_MODEL):
+    return score(_records([customer]), model=model)[0]
 
 
 @app.post("/predict/batch", response_model=list[Prediction])
-def predict_batch(customers: list[Customer]):
-    return score(_records(customers)) if customers else []
+def predict_batch(customers: list[Customer], model: ModelChoice = DEFAULT_MODEL):
+    return score(_records(customers), model=model) if customers else []
 
 
 # ------------------------------------------------------------------ dashboard data
 @app.get("/api/summary", tags=["dashboard"])
-def api_summary():
-    return service.summary()
+def api_summary(model: ModelChoice = DEFAULT_MODEL):
+    return service.summary(model)
 
 
 @app.get("/api/customers", tags=["dashboard"])
 def api_customers(segment: str = "all", q: str = "", sort: str = "churn_probability", desc: bool = True,
-                  page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)):
-    return service.page(segment, q, sort, desc, page, size)
+                  page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100),
+                  model: ModelChoice = DEFAULT_MODEL):
+    return service.page(segment, q, sort, desc, page, size, model)
 
 
 @app.get("/api/customers/export.csv", tags=["dashboard"])
-def api_export(segment: str = "all", q: str = ""):
-    df = service.query(segment, q)[service.TABLE_COLS]
+def api_export(segment: str = "all", q: str = "", model: ModelChoice = DEFAULT_MODEL):
+    df = service.query(segment, q, model=model)[service.TABLE_COLS]
     return Response(df.to_csv(index=False), media_type="text/csv",
                     headers={"Content-Disposition": f"attachment; filename=customers_{segment}.csv"})
 
 
 @app.get("/api/customers/{customer_id}", tags=["dashboard"])
-def api_customer(customer_id: str):
-    c = service.customer(customer_id)
+def api_customer(customer_id: str, model: ModelChoice = DEFAULT_MODEL):
+    c = service.customer(customer_id, model)
     if c is None:
         raise HTTPException(404, "customer not found")
     return c
