@@ -439,6 +439,8 @@ function optionsFor(type) {
 function renderWhatIf() {
   if (state.detail && renderWhatIf.loadedFrom !== state.detail.customerID && renderWhatIf.fromInsight) {
     FIELDS.forEach(([k]) => { if (k in state.detail) whatIf[k] = state.detail[k]; });
+    // Keep the customer's real lifetime spend; it only applies while months and bill are unchanged.
+    renderWhatIf.real = { tenure: state.detail.tenure, MonthlyCharges: state.detail.MonthlyCharges, TotalCharges: state.detail.TotalCharges };
     renderWhatIf.loadedFrom = state.detail.customerID;
   }
   renderWhatIf.fromInsight = false;
@@ -459,13 +461,15 @@ function renderWhatIf() {
     if (["InternetService", "PhoneService"].includes(el.name)) { renderWhatIf(); return; }
     predictWhatIf();
   };
-  $("#resetWhatIf").onclick = () => { whatIf = { ...DEFAULT_CUSTOMER }; renderWhatIf.loadedFrom = null; renderWhatIf(); };
+  $("#resetWhatIf").onclick = () => { whatIf = { ...DEFAULT_CUSTOMER }; renderWhatIf.loadedFrom = null; renderWhatIf.real = null; renderWhatIf(); };
   predictWhatIf();
 }
 function predictWhatIf() {
   clearTimeout(predictWhatIf._t);
   predictWhatIf._t = setTimeout(async () => {
-    const body = { ...whatIf, TotalCharges: whatIf.tenure * whatIf.MonthlyCharges };
+    const real = renderWhatIf.real;
+    const unchanged = real && real.tenure === whatIf.tenure && real.MonthlyCharges === whatIf.MonthlyCharges;
+    const body = { ...whatIf, TotalCharges: unchanged ? real.TotalCharges : whatIf.tenure * whatIf.MonthlyCharges };
     const r = await api("/predict", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const rv = riskVar(r.churn_probability), send = r.recommendation === "send_offer";
     const maxImpact = Math.max(0.01, ...r.top_risk_factors.map((f) => f.impact));
