@@ -209,3 +209,7 @@ curl -X POST localhost:8000/predict -H "Content-Type: application/json" \
 - Add drift monitoring (Evidently) and scheduled retraining for a production deployment.
 
 Data: [IBM Telco Customer Churn](https://github.com/IBM/telco-customer-churn-on-icp4d) (public sample dataset).
+
+## License
+
+[MIT](LICENSE)
